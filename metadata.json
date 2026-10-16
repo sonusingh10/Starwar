@@ -1,0 +1,6 @@
+{
+  "name": "Dynamic 3D Neural Mesh",
+  "description": "Interactive dynamic 3D neural brain cloud formed by thousands of holographic wireframe triangles with real-time shockwaves, particle dynamics, and neural harmonics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
