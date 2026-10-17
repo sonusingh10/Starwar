@@ -1050,6 +1050,95 @@ class NeuralAudioEngine {
     });
   }
 
+  /**
+   * Procedural Astromech Droid chatter, chirps, whistles, and warning trills
+   */
+  public playDroidChirp(mood: 'chatter' | 'warning' | 'happy' | 'tip' = 'chatter') {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+
+    if (mood === 'warning') {
+      // Rapid urgent astromech warning whistle (R2-D2 danger scream/trill)
+      const freqs = [1400, 950, 1600, 1100, 1750];
+      freqs.forEach((freq, idx) => {
+        const time = now + idx * 0.045;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.2, time + 0.04);
+
+        gain.gain.setValueAtTime(0.18, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.055);
+      });
+    } else if (mood === 'happy') {
+      // Playful ascending astromech whistle
+      const freqs = [920, 1180, 1540, 2020];
+      freqs.forEach((freq, idx) => {
+        const time = now + idx * 0.06;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, time);
+        osc.frequency.linearRampToValueAtTime(freq * 1.15, time + 0.055);
+
+        gain.gain.setValueAtTime(0.16, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.07);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.08);
+      });
+    } else if (mood === 'tip') {
+      // Friendly informational dual-chirp
+      const freqs = [840, 1320];
+      freqs.forEach((freq, idx) => {
+        const time = now + idx * 0.08;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.1, time + 0.06);
+
+        gain.gain.setValueAtTime(0.14, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.07);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.08);
+      });
+    } else {
+      // General inquisitive robotic chatter
+      const freqs = [1100, 1450, 1050];
+      freqs.forEach((freq, idx) => {
+        const time = now + idx * 0.05;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, time);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.9, time + 0.045);
+
+        gain.gain.setValueAtTime(0.15, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.055);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.06);
+      });
+    }
+  }
+
   public dispose() {
     if (this.droneOsc) {
       try {

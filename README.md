@@ -16,8 +16,10 @@ Engage Imperial starfighter squadrons in full 3D space, defend your starfighter'
    - [Core Reactor vs Deflector Shields](#core-reactor-vs-deflector-shields)
    - [Blaster Power Tiers & Hyper Strike](#blaster-power-tiers--hyper-strike)
    - [Enemy Starfighter Types](#enemy-starfighter-types)
+   - [Astromech Tactical Droid Co-Pilot (In-Game Robotic Guide)](#astromech-tactical-droid-co-pilot-in-game-robotic-guide)
 3. [What You Can Do With This Project](#what-you-can-do-with-this-project)
 4. [Hosting & Deployment Guide](#hosting--deployment-guide)
+   - [Pushing to Your GitHub Repository](#pushing-to-your-github-repository)
    - [Local Development](#local-development)
    - [Deploying to Vercel](#deploying-to-vercel)
    - [Deploying to Netlify](#deploying-to-netlify)
@@ -38,6 +40,7 @@ Engage Imperial starfighter squadrons in full 3D space, defend your starfighter'
 - **Full 3D Real-Time Space Dogfight**: Fly in cockpit view surrounded by orbiting, swooping, and strafing Imperial squadrons.
 - **Imperial Core Strike System**: Enemies actively acquire target locks on your cockpit Core Reactor, displaying a 3D tracking reticle and a **3-second lock-on countdown** before unleashing heavy charged plasma bolts.
 - **Mid-Air Projectile Deflection**: Click incoming enemy plasma bolts mid-flight to deflect them, canceling core damage, earning bonus points, and recharging reactor energy.
+- **Astromech Tactical Droid (`R4-T9`) Co-Pilot**: An in-game side-docked robotic advisor that chirps, beeps, and gives real-time situational guidance (deflection reminders, lock-on threat alerts, overdrive announcements, and an interactive Tactical Flight Manual).
 - **Two-Tier Defense System**: Independent **Deflector Shield** (absorbs standard laser fire) and **Core Reactor** (critical life-support containment).
 - **Weapon Power Overdrive**: Accumulate blaster power with every hit and combo to advance from Twin Cannons to Dual Turbolasers, Quad Ion Cannons, and the devastating homing **Proton Torpedo Volley**.
 - **Dynamic Screen Projection**: Hit indicators (`+1`), combo multipliers (`COMBO x2!`, `COMBO x3! 🔥`), and shield ripple notifications are mathematically projected from 3D world space into responsive screen coordinates.
@@ -145,6 +148,21 @@ When Core Energy reaches `0%`:
 
 ---
 
+#### Astromech Tactical Droid Co-Pilot (In-Game Robotic Guide)
+Located on the left side of your cockpit screen, **Droid R4-T9** serves as your real-time tactical co-pilot:
+- **Audio Telemetry**: Procedurally emits astromech whistles, chirps, and warning screeches as combat conditions evolve.
+- **Situational Protocol Tips**:
+  - `*BEEP-WHRRR-SCREECH!* [CORE LOCK DETECTED]`: Alerts you when a hostile is targeting your core with remaining seconds.
+  - `*CHIRP-WHISTLE* [DEFLECT PROTOCOL]`: Reminds you to click incoming red plasma bolts mid-flight for `+3%` core energy.
+  - `*EXCITED-CHIRP-TRRILL!* [OVERDRIVE READY]`: Signals that your Blaster Power is at 100% and ready for Proton Torpedo launch.
+  - `*SAD-WHISTLE-BEEP!* [CORE CRITICAL]`: Urgent advisory when Core Reactor drops to &le; 30%.
+- **Interactive Controls**:
+  - Click `[HOW TO PLAY]` or the help icon to open the complete **Astromech Flight Manual** in-game.
+  - Click `NEXT SITREP >>` to cycle through tactical operational tips.
+  - Click `[MUTE]` or `[MINIMIZE]` to shrink the droid into a minimal status pill.
+
+---
+
 ## What You Can Do With This Project
 
 1. **Space Combat Arcade Game**: Use it as a turnkey web-based 3D sci-fi dogfight shooter with responsive mouse and keyboard controls.
@@ -155,6 +173,37 @@ When Core Energy reaches `0%`:
 ---
 
 ## Hosting & Deployment Guide
+
+### Pushing to Your GitHub Repository
+
+To push this project to your own GitHub account:
+
+1. **Create an empty repository on GitHub**:
+   - Go to [github.com/new](https://github.com/new).
+   - Name your repository (e.g., `starwars-imperial-core-strike`).
+   - Do **NOT** initialize with a README, `.gitignore`, or license (the project already has them).
+
+2. **Add your GitHub remote and push**:
+   Run the following commands in your project terminal:
+   ```bash
+   # Add your remote GitHub repository (replace with your repo URL)
+   git remote add origin https://github.com/<your-username>/<your-repo-name>.git
+
+   # Ensure your primary branch is named main
+   git branch -M main
+
+   # Push your code and set upstream tracking
+   git push -u origin main
+   ```
+
+3. **Subsequent updates**:
+   ```bash
+   git add -A
+   git commit -m "Update game features"
+   git push
+   ```
+
+---
 
 ### Local Development
 
@@ -296,6 +345,7 @@ If you are an AI agent, automated assistant, or software engineer seeking to und
 │   ├── components/
 │   │   ├── NeuralScene.tsx      # Main Three.js WebGL rendering engine & game loop
 │   │   ├── CombatHud.tsx        # Heads-Up Display, 3D projections, dials & overlays
+│   │   ├── TacticalDroidGuide.tsx # Astromech Droid real-time robotic co-pilot HUD
 │   │   └── ControlOverlay.tsx   # Visual settings, theme & shape morphing panel
 │   └── geometry/
 │       ├── starwarsCombat.ts    # Ship 3D wireframe meshes, AI flight & debris

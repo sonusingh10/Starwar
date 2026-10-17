@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NeuralScene } from './components/NeuralScene';
 import { ControlOverlay } from './components/ControlOverlay';
 import { CombatHud } from './components/CombatHud';
+import { TacticalDroidGuide } from './components/TacticalDroidGuide';
 import {
   ClickMode,
   CombatStats,
@@ -641,6 +642,12 @@ export default function App() {
             incomingThreatWarning: false,
           }))
         }
+      />
+
+      {/* Astromech Tactical Droid Robotic Guidance & Co-Pilot Instructions */}
+      <TacticalDroidGuide
+        combatStats={combatStats}
+        combatMode={config.combatMode}
       />
 
       {/* Ergonomic Collapsible HUD Overlay */}
