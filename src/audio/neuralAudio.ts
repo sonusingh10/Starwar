@@ -845,6 +845,211 @@ class NeuralAudioEngine {
     });
   }
 
+  /**
+   * Lock-on countdown warning beep (escalates in pitch and urgency as lock nears completion)
+   */
+  public playLockOnBeep(secondsRemaining: number = 3) {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    // Pitch increases as lock-on gets closer to 0
+    const freq = secondsRemaining <= 1 ? 1320 : secondsRemaining <= 2 ? 1080 : 880;
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.linearRampToValueAtTime(freq * 1.25, now + 0.08);
+
+    gain.gain.setValueAtTime(0.22, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.1);
+  }
+
+  /**
+   * Imperial heavy plasma core-strike firing sound
+   */
+  public playCoreStrikeFired() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // Heavy charged plasma screech + menacing sub-bass discharge
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.32);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(3200, now);
+    filter.frequency.exponentialRampToValueAtTime(300, now + 0.3);
+
+    gain.gain.setValueAtTime(0.35, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.35);
+  }
+
+  /**
+   * Catastrophic Core Reactor impact shudder & electrical spark discharge
+   */
+  public playCoreDamage(isHeavy: boolean = false) {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+
+    // Sub-bass hull shudder
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = 'triangle';
+    subOsc.frequency.setValueAtTime(isHeavy ? 120 : 160, now);
+    subOsc.frequency.exponentialRampToValueAtTime(30, now + (isHeavy ? 0.65 : 0.45));
+
+    subGain.gain.setValueAtTime(isHeavy ? 0.5 : 0.35, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + (isHeavy ? 0.7 : 0.5));
+
+    subOsc.connect(subGain);
+    subGain.connect(ctx.destination);
+    subOsc.start(now);
+    subOsc.stop(now + (isHeavy ? 0.75 : 0.55));
+
+    // Crackling electrical spark discharge noise
+    const bufferSize = ctx.sampleRate * (isHeavy ? 0.35 : 0.22);
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.4));
+    }
+    const whiteNoise = ctx.createBufferSource();
+    whiteNoise.buffer = noiseBuffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(isHeavy ? 1800 : 2600, now);
+    filter.Q.setValueAtTime(5, now);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(isHeavy ? 0.35 : 0.25, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + (isHeavy ? 0.35 : 0.22));
+
+    whiteNoise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    whiteNoise.start(now);
+    whiteNoise.stop(now + (isHeavy ? 0.38 : 0.25));
+  }
+
+  /**
+   * Catastrophic Core Reactor Breach & Starfighter Explosion sequence
+   */
+  public playReactorBreach() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+
+    // 1. Rising siren / reactor whine prior to detonation
+    const whineOsc = ctx.createOscillator();
+    const whineGain = ctx.createGain();
+    whineOsc.type = 'sawtooth';
+    whineOsc.frequency.setValueAtTime(300, now);
+    whineOsc.frequency.exponentialRampToValueAtTime(1600, now + 0.4);
+
+    whineGain.gain.setValueAtTime(0.3, now);
+    whineGain.gain.linearRampToValueAtTime(0.45, now + 0.38);
+    whineGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+    whineOsc.connect(whineGain);
+    whineGain.connect(ctx.destination);
+    whineOsc.start(now);
+    whineOsc.stop(now + 0.46);
+
+    // 2. Massive sub-atomic core detonation at +0.4s
+    const boomTime = now + 0.4;
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = 'triangle';
+    subOsc.frequency.setValueAtTime(140, boomTime);
+    subOsc.frequency.exponentialRampToValueAtTime(22, boomTime + 1.8);
+
+    subGain.gain.setValueAtTime(0.65, boomTime);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, boomTime + 2.0);
+
+    subOsc.connect(subGain);
+    subGain.connect(ctx.destination);
+    subOsc.start(boomTime);
+    subOsc.stop(boomTime + 2.1);
+
+    // 3. Extended roaring explosion debris noise
+    const bufferSize = ctx.sampleRate * 1.5;
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 1.5);
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1400, boomTime);
+    filter.frequency.exponentialRampToValueAtTime(120, boomTime + 1.5);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.5, boomTime);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, boomTime + 1.6);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start(boomTime);
+    noise.stop(boomTime + 1.7);
+  }
+
+  /**
+   * Energetic Core Reactor Cell pickup recharge chime
+   */
+  public playPickupCollect() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // Rapid ascending synth arpeggio: 523.25 (C5) -> 659.25 (E5) -> 783.99 (G5) -> 1046.50 (C6)
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+      const time = now + idx * 0.055;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, time);
+
+      gain.gain.setValueAtTime(0.2, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(time);
+      osc.stop(time + 0.32);
+    });
+  }
+
   public dispose() {
     if (this.droneOsc) {
       try {

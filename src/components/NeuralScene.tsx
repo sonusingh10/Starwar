@@ -6,7 +6,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
-import { BrainNode, ClickMode, ColorThemeId, Shockwave, SimulationConfig } from '../types';
+import { BrainNode, ClickMode, ColorThemeId, EnemyShipType, Shockwave, SimulationConfig } from '../types';
 import { generateBrainNodes, COLOR_THEMES } from '../geometry/brainGenerator';
 import { calculateShapeTargets } from '../geometry/morphShapes';
 import { createHollowTriangleGeometry, createTetrahedronFrameGeometry } from '../geometry/triangleGeometry';
@@ -14,12 +14,20 @@ import { neuralAudio } from '../audio/neuralAudio';
 import {
   createEnemySquadron,
   createExplosionDebris,
+  createProtonTorpedoVolley,
+  createReactorPickup,
+  ActivePickup,
   CombatShip,
+  EnemyBlasterBolt,
+  ProtonTorpedo,
   ExplosionParticle,
 } from '../geometry/starwarsCombat';
 
 interface NeuralSceneProps {
   config: SimulationConfig;
+  powerTier?: 1 | 2 | 3 | 4;
+  wave?: number;
+  isGameOver?: boolean;
   onStatsUpdate?: (stats: { count: number; fps: number; activeShockwaves: number }) => void;
   onBrainClickTriggered?: (mode: ClickMode) => void;
   onShipDestroyed?: (info: {
@@ -28,8 +36,22 @@ interface NeuralSceneProps {
     screenY: number;
     shipName: string;
     isKill: boolean;
+    isElite?: boolean;
   }) => void;
   onShipLocked?: (shipName: string | null) => void;
+  onPlayerShieldDamaged?: (damage: number, screenX: number, screenY: number) => void;
+  onCoreDamage?: (damage: number, isHeavy: boolean, screenX: number, screenY: number, sourceShipName: string) => void;
+  onCoreLockOnUpdate?: (lockInfo: {
+    shipId: string;
+    shipName: string;
+    enemyType: EnemyShipType;
+    timeLeft: number;
+    totalTime: number;
+    screenX: number;
+    screenY: number;
+  } | null) => void;
+  onDeflectionSuccess?: (points: number, screenX: number, screenY: number, isCoreStrike: boolean) => void;
+  onPickupCollected?: (screenX: number, screenY: number) => void;
   triggerActionRef?: React.MutableRefObject<
     | ((
         action:
@@ -42,6 +64,10 @@ interface NeuralSceneProps {
           | 'force'
           | 'saberclash'
           | 'superlaser'
+          | 'hypertorpedo'
+          | 'restart_wave'
+          | 'restart_mission'
+          | 'breach_explosion'
       ) => void)
     | null
   >;
@@ -73,15 +99,29 @@ interface LaserBolt {
 
 export const NeuralScene: React.FC<NeuralSceneProps> = ({
   config,
+  powerTier = 1,
+  wave = 1,
+  isGameOver = false,
   onStatsUpdate,
   onBrainClickTriggered,
   onShipDestroyed,
   onShipLocked,
+  onPlayerShieldDamaged,
+  onCoreDamage,
+  onCoreLockOnUpdate,
+  onDeflectionSuccess,
+  onPickupCollected,
   triggerActionRef,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const configRef = useRef(config);
   configRef.current = config;
+  const powerTierRef = useRef<1 | 2 | 3 | 4>(powerTier);
+  powerTierRef.current = powerTier;
+  const waveRef = useRef<number>(wave);
+  waveRef.current = wave;
+  const isGameOverRef = useRef<boolean>(isGameOver);
+  isGameOverRef.current = isGameOver;
 
   // Mutable animation state references
   const nodesRef = useRef<BrainNode[]>([]);
@@ -97,8 +137,14 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
   const prevShapeRef = useRef<string>(config.currentShape);
   const hyperspaceProgressRef = useRef<number>(0);
   const laserBoltsRef = useRef<LaserBolt[]>([]);
+  const enemyBoltsRef = useRef<EnemyBlasterBolt[]>([]);
+  const protonTorpedoesRef = useRef<ProtonTorpedo[]>([]);
+  const cameraShakeRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const combatSquadronRef = useRef<CombatShip[]>([]);
   const activeDebrisRef = useRef<ExplosionParticle[]>([]);
+  const activePickupsRef = useRef<ActivePickup[]>([]);
+  const activeLockShipIdRef = useRef<string | null>(null);
+  const lastLockBeepSecondRef = useRef<number>(-1);
 
   useEffect(() => {
     const container = mountRef.current;
@@ -274,12 +320,46 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
     boltLines.frustumCulled = false;
     scene.add(boltLines);
 
+    // Enemy Imperial Blaster Bolts (Green & Red laser bolts shooting toward camera)
+    const maxEnemyBolts = 32;
+    const enemyBoltPositions = new Float32Array(maxEnemyBolts * 6);
+    const enemyBoltColors = new Float32Array(maxEnemyBolts * 6);
+    const enemyBoltGeometry = new THREE.BufferGeometry();
+    enemyBoltGeometry.setAttribute('position', new THREE.BufferAttribute(enemyBoltPositions, 3).setUsage(THREE.DynamicDrawUsage));
+    enemyBoltGeometry.setAttribute('color', new THREE.BufferAttribute(enemyBoltColors, 3).setUsage(THREE.DynamicDrawUsage));
+    const enemyBoltMaterial = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+    });
+    const enemyBoltLines = new THREE.LineSegments(enemyBoltGeometry, enemyBoltMaterial);
+    enemyBoltLines.frustumCulled = false;
+    scene.add(enemyBoltLines);
+
+    // Proton Torpedo Lines (Hyper Counter-Strike)
+    const maxTorpedoes = 16;
+    const torpedoPositions = new Float32Array(maxTorpedoes * 6);
+    const torpedoColors = new Float32Array(maxTorpedoes * 6);
+    const torpedoGeometry = new THREE.BufferGeometry();
+    torpedoGeometry.setAttribute('position', new THREE.BufferAttribute(torpedoPositions, 3).setUsage(THREE.DynamicDrawUsage));
+    torpedoGeometry.setAttribute('color', new THREE.BufferAttribute(torpedoColors, 3).setUsage(THREE.DynamicDrawUsage));
+    const torpedoMaterial = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+    });
+    const torpedoLines = new THREE.LineSegments(torpedoGeometry, torpedoMaterial);
+    torpedoLines.frustumCulled = false;
+    scene.add(torpedoLines);
+
     // Star Wars Enemy Target Squadron (TIE Interceptors, TIE Fighters, Droids)
     const combatGroup = new THREE.Group();
     combatGroup.name = 'combatSquadron';
     scene.add(combatGroup);
 
-    const squadron = createEnemySquadron(configRef.current.enemySquadronSize || 4);
+    const squadron = createEnemySquadron(configRef.current.enemySquadronSize || 4, waveRef.current);
     combatSquadronRef.current = squadron;
     squadron.forEach((ship) => {
       combatGroup.add(ship.group);
@@ -306,6 +386,28 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       debrisInstMesh.setMatrixAt(d, _mat4);
     }
     debrisInstMesh.instanceMatrix.needsUpdate = true;
+
+    // Core Reactor Cells Pickup Instanced Mesh (+15% Core Energy Restore)
+    const maxPickups = 10;
+    const pickupGeom = new THREE.OctahedronGeometry(0.32, 0);
+    const pickupMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981, // Glowing emerald green
+      wireframe: true,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+    });
+    const pickupInstMesh = new THREE.InstancedMesh(pickupGeom, pickupMat, maxPickups);
+    pickupInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    pickupInstMesh.frustumCulled = false;
+    scene.add(pickupInstMesh);
+
+    for (let p = 0; p < maxPickups; p++) {
+      _scale.set(0, 0, 0);
+      _mat4.compose(_pos, _quat, _scale);
+      pickupInstMesh.setMatrixAt(p, _mat4);
+    }
+    pickupInstMesh.instanceMatrix.needsUpdate = true;
 
     // Initial populate instances
     for (let i = 0; i < nodes.length; i++) {
@@ -394,19 +496,34 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       const isGreen =
         configRef.current.currentShape === 'xwing' ||
         configRef.current.currentShape === 'deathstar';
-      const boltCol = isGreen ? new THREE.Color('#22c55e') : new THREE.Color('#ef4444');
+
+      const currentTier = powerTierRef.current || 1;
+      let boltCol = isGreen ? new THREE.Color('#22c55e') : new THREE.Color('#ef4444');
+      let offsets = [-0.75, 0.75];
+      let speed = 54.0;
+
+      if (currentTier === 2) {
+        // Dual Turbolasers: electric amber/green with boosted velocity
+        boltCol = isGreen ? new THREE.Color('#4ade80') : new THREE.Color('#ffbe0b');
+        offsets = [-0.9, 0.9];
+        speed = 66.0;
+      } else if (currentTier >= 3) {
+        // Quad Ion Cannons: 4 simultaneous high-energy cyan/blue plasma bolts
+        boltCol = new THREE.Color('#00f0ff');
+        offsets = [-1.2, -0.42, 0.42, 1.2];
+        speed = 74.0;
+      }
 
       const camPos = camera.position;
       const forward = new THREE.Vector3().subVectors(targetPoint, camPos).normalize();
       const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
 
-      [-0.75, 0.75].forEach((side) => {
+      offsets.forEach((side) => {
         const origin = camPos
           .clone()
           .add(forward.clone().multiplyScalar(0.7))
           .add(right.clone().multiplyScalar(side));
         const dir = new THREE.Vector3().subVectors(targetPoint, origin).normalize();
-        const speed = 52.0;
 
         laserBoltsRef.current.push({
           x: origin.x,
@@ -419,6 +536,18 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
           color: boltCol,
         });
       });
+    };
+
+    const triggerHyperProtonTorpedoes = () => {
+      neuralAudio.playSuperCounterStrike();
+      bloomFlareRef.current = 3.6;
+      const activeShips = combatSquadronRef.current.filter((s) => !s.isDead && s.group.visible);
+      const volley = createProtonTorpedoVolley(camera.position, activeShips);
+      protonTorpedoesRef.current.push(...volley);
+
+      const forward = camera.getWorldDirection(new THREE.Vector3());
+      const center = camera.position.clone().add(forward.multiplyScalar(3.2));
+      triggerShockwave({ x: center.x, y: center.y, z: center.z });
     };
 
     const triggerBlaster = (targetPoint?: { x: number; y: number; z: number }) => {
@@ -499,6 +628,55 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       shockwavesRef.current.push(wave);
     };
 
+    const triggerResetWave = (targetWave: number) => {
+      // Clear all incoming projectiles, torpedoes, pickups & locks
+      enemyBoltsRef.current = [];
+      protonTorpedoesRef.current = [];
+      laserBoltsRef.current = [];
+      activePickupsRef.current = [];
+      activeLockShipIdRef.current = null;
+      lastLockBeepSecondRef.current = -1;
+      onCoreLockOnUpdate?.(null);
+
+      // Re-spawn fresh squadron scaled for the target wave
+      combatSquadronRef.current.forEach((ship) => {
+        combatGroup.remove(ship.group);
+      });
+      const freshSquadron = createEnemySquadron(configRef.current.enemySquadronSize || 4, targetWave);
+      combatSquadronRef.current = freshSquadron;
+      freshSquadron.forEach((ship) => {
+        combatGroup.add(ship.group);
+      });
+    };
+
+    const triggerBreachExplosion = () => {
+      neuralAudio.playReactorBreach();
+      bloomFlareRef.current = 4.0;
+      cameraShakeRef.current.set(
+        (Math.random() - 0.5) * 1.5,
+        (Math.random() - 0.5) * 1.5,
+        (Math.random() - 0.5) * 0.8
+      );
+
+      // Massive explosion debris right in front of cockpit camera
+      const camPos = camera.position.clone();
+      const breachPos = camPos.clone().add(new THREE.Vector3(0, 0, -1.2));
+      const debris = createExplosionDebris(breachPos);
+      activeDebrisRef.current.push(...debris);
+
+      const wave: Shockwave = {
+        id: Date.now(),
+        epicenter: { x: 0, y: 0, z: 0 },
+        startTime: performance.now(),
+        speed: 12.0,
+        strength: 2.2,
+        radius: 0.0,
+        maxRadius: 8.0,
+        duration: 2200,
+      };
+      shockwavesRef.current.push(wave);
+    };
+
     // Expose trigger action to parent HUD
     if (triggerActionRef) {
       triggerActionRef.current = (action) => {
@@ -511,6 +689,10 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
         else if (action === 'force') triggerForce();
         else if (action === 'saberclash') triggerSaberClash();
         else if (action === 'superlaser') triggerSuperlaser();
+        else if (action === 'hypertorpedo') triggerHyperProtonTorpedoes();
+        else if (action === 'restart_wave') triggerResetWave(waveRef.current);
+        else if (action === 'restart_mission') triggerResetWave(1);
+        else if (action === 'breach_explosion') triggerBreachExplosion();
       };
     }
 
@@ -527,11 +709,43 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
 
       // Only treat as click if pointer didn't drag to orbit
       if (dx < 6 && dy < 6) {
+        // Combat input is disabled during reactor failure / game over state
+        if (isGameOverRef.current) return;
+
         const rect = renderer.domElement.getBoundingClientRect();
         _mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         _mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
         _raycaster.setFromCamera(_mouse, camera);
+
+        // 0. Check if player clicked a floating Core Reactor Pickup Canister (+15% restore)
+        if (configRef.current.combatMode && activePickupsRef.current.length > 0) {
+          let closestPickupIdx = -1;
+          let closestDist = 2.4;
+          for (let p = 0; p < activePickupsRef.current.length; p++) {
+            const pickup = activePickupsRef.current[p];
+            const closest = new THREE.Vector3();
+            _raycaster.ray.closestPointToPoint(pickup.pos, closest);
+            const d = closest.distanceTo(pickup.pos);
+            if (d < closestDist) {
+              closestDist = d;
+              closestPickupIdx = p;
+            }
+          }
+
+          if (closestPickupIdx !== -1) {
+            const p = activePickupsRef.current[closestPickupIdx];
+            activePickupsRef.current.splice(closestPickupIdx, 1);
+            neuralAudio.playPickupCollect();
+            const proj = p.pos.clone().project(camera);
+            const screenW = renderer.domElement.clientWidth || window.innerWidth;
+            const screenH = renderer.domElement.clientHeight || window.innerHeight;
+            const sX = ((proj.x + 1) * 0.5) * screenW;
+            const sY = ((-proj.y + 1) * 0.5) * screenH;
+            onPickupCollected?.(sX, sY);
+            return;
+          }
+        }
 
         // 1. Raycast Check for Star Wars Enemy Target Ships!
         let hitShip: CombatShip | null = null;
@@ -574,14 +788,28 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
           neuralAudio.playShipExplosion();
           neuralAudio.playPointScore();
 
+          // If this ship was locking onto the Core Reactor, break the lock!
+          if (hitShip.id === activeLockShipIdRef.current) {
+            activeLockShipIdRef.current = null;
+            lastLockBeepSecondRef.current = -1;
+            onCoreLockOnUpdate?.(null);
+          }
+
           // Destroy ship and initiate respawn timer
           hitShip.isDead = true;
+          hitShip.isLockingOnCore = false;
           hitShip.group.visible = false;
           hitShip.respawnTimer = 2.2 + Math.random() * 1.5;
 
           // Spawn high-energy explosion debris
           const debris = createExplosionDebris(hitShip.position);
           activeDebrisRef.current.push(...debris);
+
+          // Spawn Core Reactor Pickup Cell (guaranteed on elite TIE Advanced kill, 35% on standard)
+          if (hitShip.isElite || Math.random() < 0.35) {
+            const pickup = createReactorPickup(hitShip.position);
+            activePickupsRef.current.push(pickup);
+          }
 
           // Bloom fireball flash
           bloomFlareRef.current = Math.min(3.2, bloomFlareRef.current + 1.8);
@@ -599,9 +827,50 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
             screenY: sY,
             shipName: hitShip.name,
             isKill: true,
+            isElite: hitShip.isElite,
           });
 
           return;
+        }
+
+        // Check if player clicked an incoming enemy blaster bolt to deflect it mid-air!
+        if (configRef.current.combatMode && enemyBoltsRef.current.length > 0) {
+          let closestBoltIdx = -1;
+          let closestBoltDist = 2.0;
+          for (let i = 0; i < enemyBoltsRef.current.length; i++) {
+            const b = enemyBoltsRef.current[i];
+            const closest = new THREE.Vector3();
+            _raycaster.ray.closestPointToPoint(b.pos, closest);
+            const d = closest.distanceTo(b.pos);
+            if (d < closestBoltDist) {
+              closestBoltDist = d;
+              closestBoltIdx = i;
+            }
+          }
+
+          if (closestBoltIdx !== -1) {
+            const defBolt = enemyBoltsRef.current[closestBoltIdx];
+            triggerBlasterBoltAt(defBolt.pos);
+            neuralAudio.playShieldDeflect();
+
+            const isCoreStrike = !!defBolt.isCoreStrike;
+            if (isCoreStrike) {
+              neuralAudio.playPointScore(3);
+            } else {
+              neuralAudio.playPointScore(2);
+            }
+
+            defBolt.life = 0; // destroyed
+
+            const proj = defBolt.pos.clone().project(camera);
+            const screenW = renderer.domElement.clientWidth || window.innerWidth;
+            const screenH = renderer.domElement.clientHeight || window.innerHeight;
+            const sX = ((proj.x + 1) * 0.5) * screenW;
+            const sY = ((-proj.y + 1) * 0.5) * screenH;
+
+            onDeflectionSuccess?.(isCoreStrike ? 2 : 1, sX, sY, isCoreStrike);
+            return;
+          }
         }
 
         // If missed in combat mode or blaster mode, fire warning shots into space
@@ -1048,6 +1317,128 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
 
           // Subtle idle hover bobbing
           ship.group.position.y += Math.sin(elapsedTime * 4 + s) * 0.03;
+
+          // Two-Sided Dogfight & Imperial Core Strike AI
+          if (!isGameOverRef.current) {
+            ship.shootCooldown -= delta;
+
+            // Check if this ship is currently performing a 3-second Core Lock-On
+            if (ship.isLockingOnCore) {
+              ship.lockOnElapsed += delta;
+              const timeLeft = Math.max(0, ship.lockOnDuration - ship.lockOnElapsed);
+
+              // 2D screen projection for visible HUD targeting reticle & countdown tracking
+              const proj = ship.position.clone().project(camera);
+              const screenW = renderer.domElement.clientWidth || window.innerWidth;
+              const screenH = renderer.domElement.clientHeight || window.innerHeight;
+              const sX = ((proj.x + 1) * 0.5) * screenW;
+              const sY = ((-proj.y + 1) * 0.5) * screenH;
+
+              // Audible warning beeps at 3s, 2s, 1s thresholds
+              const curSec = Math.ceil(timeLeft);
+              if (curSec !== lastLockBeepSecondRef.current && curSec >= 1 && curSec <= 3) {
+                lastLockBeepSecondRef.current = curSec;
+                neuralAudio.playLockOnBeep(curSec);
+              }
+
+              onCoreLockOnUpdate?.({
+                shipId: ship.id,
+                shipName: ship.name,
+                enemyType: ship.type,
+                timeLeft: Math.round(timeLeft * 10) / 10,
+                totalTime: ship.lockOnDuration,
+                screenX: sX,
+                screenY: sY,
+              });
+
+              // 3-second lock-on completed -> FIRE CHARGED RED PLASMA BOLT AT COCKPIT CORE!
+              if (ship.lockOnElapsed >= ship.lockOnDuration) {
+                ship.isLockingOnCore = false;
+                activeLockShipIdRef.current = null;
+                lastLockBeepSecondRef.current = -1;
+                onCoreLockOnUpdate?.(null);
+
+                neuralAudio.playCoreStrikeFired();
+
+                // Direct trajectory toward the player's cockpit center
+                const camPos = camera.position;
+                const aimDir = new THREE.Vector3().subVectors(camPos, ship.position).normalize();
+                const speed = ship.projectileSpeed || 28.0;
+                const damage = ship.damageValue || 12; // 12% normal, 22% heavy
+                const isHeavy = !!ship.isElite;
+                const boltColor = isHeavy ? new THREE.Color('#ff0033') : new THREE.Color('#ff1e27');
+
+                enemyBoltsRef.current.push({
+                  id: Date.now() + Math.random(),
+                  pos: ship.position.clone(),
+                  vel: aimDir.multiplyScalar(speed),
+                  color: boltColor,
+                  life: 2.2,
+                  maxLife: 2.2,
+                  damage,
+                  isCoreStrike: true,
+                  isHeavy,
+                  sourceShipId: ship.id,
+                  sourceShipName: ship.name,
+                });
+
+                ship.shootCooldown = (ship.attackCooldown || 3.5) + Math.random() * 2.0;
+              }
+            } else if (ship.shootCooldown <= 0) {
+              const camPos = camera.position;
+              const distToCam = ship.position.distanceTo(camPos);
+              if (distToCam < 16.0) {
+                // If no enemy is currently locking on the Core Reactor, initiate a 3-second lock!
+                // Fair, skill-based mechanic: one enemy locks at a time with 3-second clear warning.
+                if (!activeLockShipIdRef.current) {
+                  ship.isLockingOnCore = true;
+                  ship.lockOnElapsed = 0;
+                  ship.lockOnDuration = 3.0;
+                  activeLockShipIdRef.current = ship.id;
+                  lastLockBeepSecondRef.current = 3;
+                  neuralAudio.playLockOnBeep(3);
+                } else {
+                  // Other enemies fire light standard defensive potshots at player deflector shields
+                  neuralAudio.playEnemyBlasterFire();
+                  const isTie = ship.type.startsWith('tie');
+                  const boltColor = isTie ? new THREE.Color('#22c55e') : new THREE.Color('#38bdf8');
+
+                  const dir = new THREE.Vector3().subVectors(camPos, ship.position).normalize();
+                  const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+
+                  [-0.26, 0.26].forEach((offset) => {
+                    const spawnPos = ship.position.clone().add(right.clone().multiplyScalar(offset));
+                    const aimDir = new THREE.Vector3()
+                      .subVectors(camPos, spawnPos)
+                      .add(new THREE.Vector3((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, 0))
+                      .normalize();
+                    const speed = 24.0;
+
+                    enemyBoltsRef.current.push({
+                      id: Date.now() + Math.random(),
+                      pos: spawnPos,
+                      vel: aimDir.multiplyScalar(speed),
+                      color: boltColor,
+                      life: 1.8,
+                      maxLife: 1.8,
+                      damage: 8,
+                      isCoreStrike: false,
+                    });
+                  });
+
+                  ship.shootCooldown = 3.5 + Math.random() * 2.5;
+                }
+              } else {
+                ship.shootCooldown = 1.0;
+              }
+            }
+          } else {
+            // Stop enemy firing during game over
+            if (activeLockShipIdRef.current) {
+              activeLockShipIdRef.current = null;
+              onCoreLockOnUpdate?.(null);
+            }
+          }
         }
       } else {
         combatGroup.visible = false;
@@ -1094,7 +1485,7 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       debrisInstMesh.instanceMatrix.needsUpdate = true;
       if (debrisInstMesh.instanceColor) debrisInstMesh.instanceColor.needsUpdate = true;
 
-      // Update Star Wars Turbolaser Blaster Bolts (Full 3D Directed Streaks)
+      // Update Star Wars Turbolaser Blaster Bolts (Player Shots)
       let boltVertexIdx = 0;
       const activeBolts = laserBoltsRef.current.filter((b) => b.life > 0.02);
       laserBoltsRef.current = activeBolts;
@@ -1130,6 +1521,209 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       boltGeometry.attributes.color.needsUpdate = true;
       boltGeometry.setDrawRange(0, boltVertexIdx / 3);
 
+      // Update Incoming Enemy Blaster Bolts Speeding Toward Player Camera
+      let eBoltVertexIdx = 0;
+      const activeEBolts = enemyBoltsRef.current.filter((b) => b.life > 0.02);
+      enemyBoltsRef.current = activeEBolts;
+
+      for (let eb = 0; eb < activeEBolts.length; eb++) {
+        const ebolt = activeEBolts[eb];
+        ebolt.pos.addScaledVector(ebolt.vel, delta);
+        ebolt.life -= delta;
+
+        // Check if incoming bolt strikes player deflector shields or cockpit Core Reactor
+        const distToCam = ebolt.pos.distanceTo(camera.position);
+        if (distToCam < 0.95) {
+          const proj = ebolt.pos.clone().project(camera);
+          const screenW = renderer.domElement.clientWidth || window.innerWidth;
+          const screenH = renderer.domElement.clientHeight || window.innerHeight;
+          const sX = ((proj.x + 1) * 0.5) * screenW;
+          const sY = ((-proj.y + 1) * 0.5) * screenH;
+
+          if (ebolt.isCoreStrike) {
+            // DIRECT COCKPIT CORE REACTOR IMPACT!
+            if (!isGameOverRef.current) {
+              onCoreDamage?.(
+                ebolt.damage,
+                !!ebolt.isHeavy,
+                sX,
+                sY,
+                ebolt.sourceShipName || 'Imperial Core Strike'
+              );
+              neuralAudio.playCoreDamage(ebolt.isHeavy);
+              bloomFlareRef.current = Math.min(3.8, bloomFlareRef.current + 2.5);
+
+              // Violent cockpit camera shake
+              cameraShakeRef.current.set(
+                (Math.random() - 0.5) * 0.85,
+                (Math.random() - 0.5) * 0.85,
+                (Math.random() - 0.5) * 0.45
+              );
+            }
+          } else {
+            // Deflector shield hit
+            neuralAudio.playShieldDeflect();
+            onPlayerShieldDamaged?.(ebolt.damage, sX, sY);
+
+            // Moderate shield ripple camera shake
+            cameraShakeRef.current.set(
+              (Math.random() - 0.5) * 0.35,
+              (Math.random() - 0.5) * 0.35,
+              (Math.random() - 0.5) * 0.15
+            );
+          }
+
+          ebolt.life = 0;
+          continue;
+        }
+
+        const streakLen = ebolt.isCoreStrike ? 0.065 : 0.045;
+        enemyBoltPositions[eBoltVertexIdx] = ebolt.pos.x;
+        enemyBoltPositions[eBoltVertexIdx + 1] = ebolt.pos.y;
+        enemyBoltPositions[eBoltVertexIdx + 2] = ebolt.pos.z;
+
+        enemyBoltPositions[eBoltVertexIdx + 3] = ebolt.pos.x - ebolt.vel.x * streakLen;
+        enemyBoltPositions[eBoltVertexIdx + 4] = ebolt.pos.y - ebolt.vel.y * streakLen;
+        enemyBoltPositions[eBoltVertexIdx + 5] = ebolt.pos.z - ebolt.vel.z * streakLen;
+
+        const emission = (ebolt.life / ebolt.maxLife) * (ebolt.isCoreStrike ? 6.2 : 4.8);
+        enemyBoltColors[eBoltVertexIdx] = ebolt.color.r * emission;
+        enemyBoltColors[eBoltVertexIdx + 1] = ebolt.color.g * emission;
+        enemyBoltColors[eBoltVertexIdx + 2] = ebolt.color.b * emission;
+
+        enemyBoltColors[eBoltVertexIdx + 3] = ebolt.color.r * emission;
+        enemyBoltColors[eBoltVertexIdx + 4] = ebolt.color.g * emission;
+        enemyBoltColors[eBoltVertexIdx + 5] = ebolt.color.b * emission;
+
+        eBoltVertexIdx += 6;
+      }
+      enemyBoltGeometry.attributes.position.needsUpdate = true;
+      enemyBoltGeometry.attributes.color.needsUpdate = true;
+      enemyBoltGeometry.setDrawRange(0, eBoltVertexIdx / 3);
+
+      // Update Proton Torpedoes (Hyper Counter-Strike Homing Volley)
+      let torpVertexIdx = 0;
+      const activeTorps = protonTorpedoesRef.current.filter((t) => t.life > 0.02);
+      protonTorpedoesRef.current = activeTorps;
+
+      for (let t = 0; t < activeTorps.length; t++) {
+        const torp = activeTorps[t];
+        torp.life -= delta;
+
+        // Target active enemy ship
+        const targetShip = combatSquadronRef.current.find((s) => s.id === torp.targetShipId && !s.isDead);
+        const targetPos = targetShip ? targetShip.position : torp.targetPos;
+
+        const toTarget = new THREE.Vector3().subVectors(targetPos, torp.pos);
+        const dist = toTarget.length();
+
+        if (dist < 0.85 || (targetShip && targetShip.isDead)) {
+          // Torpedo detonation!
+          neuralAudio.playShipExplosion();
+          neuralAudio.playPointScore(4);
+
+          if (targetShip && !targetShip.isDead) {
+            targetShip.isDead = true;
+            targetShip.group.visible = false;
+            targetShip.respawnTimer = 3.2;
+
+            const debris = createExplosionDebris(targetShip.position);
+            activeDebrisRef.current.push(...debris);
+
+            const proj = targetShip.position.clone().project(camera);
+            const screenW = renderer.domElement.clientWidth || window.innerWidth;
+            const screenH = renderer.domElement.clientHeight || window.innerHeight;
+            const sX = ((proj.x + 1) * 0.5) * screenW;
+            const sY = ((-proj.y + 1) * 0.5) * screenH;
+
+            onShipDestroyed?.({
+              points: 2,
+              screenX: sX,
+              screenY: sY,
+              shipName: `${targetShip.name} [PROTON BLAST]`,
+              isKill: true,
+            });
+          }
+
+          bloomFlareRef.current = Math.min(3.8, bloomFlareRef.current + 2.0);
+          torp.life = 0;
+          continue;
+        }
+
+        toTarget.normalize();
+        torp.vel.lerp(toTarget.multiplyScalar(torp.speed), 0.14);
+        torp.pos.addScaledVector(torp.vel, delta);
+
+        torpedoPositions[torpVertexIdx] = torp.pos.x;
+        torpedoPositions[torpVertexIdx + 1] = torp.pos.y;
+        torpedoPositions[torpVertexIdx + 2] = torp.pos.z;
+
+        torpedoPositions[torpVertexIdx + 3] = torp.pos.x - torp.vel.x * 0.06;
+        torpedoPositions[torpVertexIdx + 4] = torp.pos.y - torp.vel.y * 0.06;
+        torpedoPositions[torpVertexIdx + 5] = torp.pos.z - torp.vel.z * 0.06;
+
+        torpedoColors[torpVertexIdx] = 2.0;
+        torpedoColors[torpVertexIdx + 1] = 4.0;
+        torpedoColors[torpVertexIdx + 2] = 5.0;
+
+        torpedoColors[torpVertexIdx + 3] = 1.0;
+        torpedoColors[torpVertexIdx + 4] = 2.5;
+        torpedoColors[torpVertexIdx + 5] = 5.0;
+
+        torpVertexIdx += 6;
+      }
+      torpedoGeometry.attributes.position.needsUpdate = true;
+      torpedoGeometry.attributes.color.needsUpdate = true;
+      torpedoGeometry.setDrawRange(0, torpVertexIdx / 3);
+
+      // Update Core Reactor Energy Cell Pickups (+15% Core Energy Restore)
+      const activePickups = activePickupsRef.current.filter((p) => p.life > 0.05);
+      activePickupsRef.current = activePickups;
+
+      for (let p = 0; p < maxPickups; p++) {
+        if (p < activePickups.length) {
+          const pickup = activePickups[p];
+          pickup.pos.addScaledVector(pickup.vel, delta);
+          pickup.vel.multiplyScalar(0.985); // Gentle space friction
+          pickup.rot.x += pickup.rotSpeed.x * delta;
+          pickup.rot.y += pickup.rotSpeed.y * delta;
+          pickup.life -= delta;
+
+          // Proximity auto-pickup if it drifts close to player's cockpit
+          const dist = pickup.pos.distanceTo(camera.position);
+          if (dist < 1.1) {
+            pickup.life = 0;
+            neuralAudio.playPickupCollect();
+            const proj = pickup.pos.clone().project(camera);
+            const screenW = renderer.domElement.clientWidth || window.innerWidth;
+            const screenH = renderer.domElement.clientHeight || window.innerHeight;
+            const sX = ((proj.x + 1) * 0.5) * screenW;
+            const sY = ((-proj.y + 1) * 0.5) * screenH;
+            onPickupCollected?.(sX, sY);
+            continue;
+          }
+
+          const s = Math.min(1.0, pickup.life / 0.5) * 0.95;
+          _pos.copy(pickup.pos);
+          _euler.copy(pickup.rot);
+          _quat.setFromEuler(_euler);
+          _scale.set(s, s, s);
+          _mat4.compose(_pos, _quat, _scale);
+          pickupInstMesh.setMatrixAt(p, _mat4);
+        } else {
+          _scale.set(0, 0, 0);
+          _mat4.compose(_pos, _quat, _scale);
+          pickupInstMesh.setMatrixAt(p, _mat4);
+        }
+      }
+      pickupInstMesh.instanceMatrix.needsUpdate = true;
+
+      // Camera Shake Dampening
+      if (cameraShakeRef.current.lengthSq() > 0.0001) {
+        camera.position.add(cameraShakeRef.current);
+        cameraShakeRef.current.multiplyScalar(0.82);
+      }
+
       // Post-Processing Bloom Render
       if (configRef.current.bloomEnabled) {
         composer.render();
@@ -1159,6 +1753,10 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       lineMaterial.dispose();
       boltGeometry.dispose();
       boltMaterial.dispose();
+      enemyBoltGeometry.dispose();
+      enemyBoltMaterial.dispose();
+      torpedoGeometry.dispose();
+      torpedoMaterial.dispose();
       debrisGeom.dispose();
       debrisMat.dispose();
       debrisInstMesh.dispose();

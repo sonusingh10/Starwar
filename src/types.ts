@@ -100,6 +100,28 @@ export interface CombatStats {
   isVictorious: boolean;         // Trigger victory celebration when wave cleared
   totalWins: number;             // Total sectors won
   incomingThreatWarning: boolean;// Active when enemy is locked onto cockpit
+  // Imperial Core Strike System
+  coreEnergy: number;            // 0 to 100% Core Reactor health
+  isGameOver: boolean;           // True when core is breached and game over triggered
+  eliteKills: number;            // Count of elite TIE Advanced destroyed (+8% core restore)
+  deflections: number;           // Count of incoming plasma deflections (+3% core restore)
+  activeLockOn?: {
+    shipId: string;
+    shipName: string;
+    enemyType: EnemyShipType;
+    timeLeft: number;            // 3.0 countdown to 0
+    totalTime: number;
+    screenX: number;
+    screenY: number;
+  } | null;
+}
+
+export interface ReactorPickup {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  life: number;
 }
 
 export interface FloatingPointNotice {

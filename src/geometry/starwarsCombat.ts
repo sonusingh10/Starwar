@@ -23,6 +23,43 @@ export interface CombatShip {
   isDead: boolean;
   deathTimer: number;
   respawnTimer: number;
+  // Imperial Core Strike & Two-Sided Combat Properties
+  shootCooldown: number;
+  isTargetingPlayer: boolean;
+  targetLockTimer: number;
+  isLockingOnCore: boolean;
+  lockOnElapsed: number;
+  lockOnDuration: number;
+  isElite: boolean;
+  attackCooldown: number;
+  projectileSpeed: number;
+  damageValue: number;
+  targetingBehavior: 'swoop_lock' | 'strafe_snipe' | 'heavy_barrage' | 'sensor_probe';
+}
+
+export interface EnemyBlasterBolt {
+  id: number;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  color: THREE.Color;
+  life: number;
+  maxLife: number;
+  damage: number;
+  isCoreStrike?: boolean;
+  isHeavy?: boolean;
+  sourceShipId?: string;
+  sourceShipName?: string;
+}
+
+export interface ProtonTorpedo {
+  id: number;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  targetShipId?: string;
+  targetPos: THREE.Vector3;
+  speed: number;
+  life: number;
+  trail: THREE.Vector3[];
 }
 
 export interface ExplosionParticle {
@@ -281,21 +318,30 @@ export function createEnemyShipMesh(type: EnemyShipType): { group: THREE.Group; 
 }
 
 /**
- * Spawns an initial wave of enemy starships
+ * Spawns an initial wave of enemy starships with distinct attack AI, speeds, and damage
  */
-export function createEnemySquadron(count: number = 4): CombatShip[] {
-  const types: EnemyShipType[] = ['tie_interceptor', 'tie_fighter', 'tie_advanced', 'probe_droid'];
+export function createEnemySquadron(count: number = 4, wave: number = 1): CombatShip[] {
+  // As waves advance, spawn stronger squadrons with more elite TIE Advanced fighters
+  let pool: EnemyShipType[] = ['tie_interceptor', 'tie_fighter', 'probe_droid', 'tie_advanced'];
+  if (wave >= 3) {
+    pool = ['tie_advanced', 'tie_interceptor', 'tie_advanced', 'tie_fighter', 'probe_droid'];
+  } else if (wave >= 2) {
+    pool = ['tie_interceptor', 'tie_fighter', 'tie_advanced', 'tie_interceptor', 'probe_droid'];
+  }
+
   const names = {
     tie_interceptor: 'TIE Interceptor [Alpha]',
     tie_fighter: 'Imperial TIE Fighter [Vanguard]',
-    tie_advanced: 'TIE Advanced x1 [Black Squadron]',
+    tie_advanced: 'TIE Advanced x1 [Black Squadron Elite]',
     probe_droid: 'Imperial Viper Probe Droid',
   };
 
   const ships: CombatShip[] = [];
+  // Attack frequency scales as wave advances (faster cooldowns)
+  const wavePaceFactor = Math.max(0.65, 1.0 - (wave - 1) * 0.1);
 
   for (let i = 0; i < count; i++) {
-    const type = types[i % types.length];
+    const type = pool[i % pool.length];
     const { group, hitBox, shieldMesh } = createEnemyShipMesh(type);
 
     // Initial 3D spawn positions in orbit around the scene
@@ -311,6 +357,48 @@ export function createEnemySquadron(count: number = 4): CombatShip[] {
 
     const flightModes: ('orbit' | 'swoop' | 'strafe' | 'figure8')[] = ['orbit', 'swoop', 'figure8', 'strafe'];
 
+    // Distinct attack AI per enemy type
+    let attackCooldown = 3.5;
+    let projectileSpeed = 25.0;
+    let damageValue = 12; // Normal core damage: 12%
+    let isElite = false;
+    let targetingBehavior: 'swoop_lock' | 'strafe_snipe' | 'heavy_barrage' | 'sensor_probe' = 'swoop_lock';
+    let baseSpeed = 2.0;
+
+    if (type === 'tie_interceptor') {
+      // Fast, agile interceptor
+      attackCooldown = (2.6 + Math.random() * 1.4) * wavePaceFactor;
+      projectileSpeed = 30.0;
+      damageValue = 12;
+      targetingBehavior = 'strafe_snipe';
+      baseSpeed = 2.4 + Math.random() * 0.8;
+    } else if (type === 'tie_fighter') {
+      // Standard imperial fighter
+      attackCooldown = (3.6 + Math.random() * 1.8) * wavePaceFactor;
+      projectileSpeed = 24.0;
+      damageValue = 12;
+      targetingBehavior = 'swoop_lock';
+      baseSpeed = 1.9 + Math.random() * 0.6;
+    } else if (type === 'tie_advanced') {
+      // Heavy elite fighter (Vader style) - 22% heavy core damage!
+      attackCooldown = (4.8 + Math.random() * 1.8) * wavePaceFactor;
+      projectileSpeed = 32.0;
+      damageValue = 22; // Heavy attack: 22%
+      isElite = true;
+      targetingBehavior = 'heavy_barrage';
+      baseSpeed = 2.1 + Math.random() * 0.5;
+    } else if (type === 'probe_droid') {
+      // Reconnaissance scout
+      attackCooldown = (3.2 + Math.random() * 1.5) * wavePaceFactor;
+      projectileSpeed = 28.0;
+      damageValue = 12;
+      targetingBehavior = 'sensor_probe';
+      baseSpeed = 1.5 + Math.random() * 0.5;
+    }
+
+    // Stagger initial firing cooldown so player isn't overwhelmed immediately
+    const initialCooldown = 2.5 + i * 1.2 + Math.random() * 2.0;
+
     ships.push({
       id: `ship_${Date.now()}_${i}_${Math.random()}`,
       type,
@@ -320,9 +408,9 @@ export function createEnemySquadron(count: number = 4): CombatShip[] {
       position: group.position,
       velocity: new THREE.Vector3(0, 0, 0),
       targetPos: new THREE.Vector3(0, 0, 0),
-      health: 1, // 1 direct blaster hit to destroy for fast, responsive arcade fun!
+      health: 1, // 1 direct blaster hit to destroy for fast arcade response
       maxHealth: 1,
-      speed: 1.8 + Math.random() * 1.4,
+      speed: baseSpeed,
       rollAngle: 0,
       pitchAngle: 0,
       flightTimer: i * 2.5,
@@ -333,6 +421,17 @@ export function createEnemySquadron(count: number = 4): CombatShip[] {
       isDead: false,
       deathTimer: 0,
       respawnTimer: 0,
+      shootCooldown: initialCooldown,
+      isTargetingPlayer: false,
+      targetLockTimer: 0,
+      isLockingOnCore: false,
+      lockOnElapsed: 0,
+      lockOnDuration: 3.0, // 3-second lock-on countdown before firing
+      isElite,
+      attackCooldown,
+      projectileSpeed,
+      damageValue,
+      targetingBehavior,
     });
   }
 
@@ -340,18 +439,51 @@ export function createEnemySquadron(count: number = 4): CombatShip[] {
 }
 
 /**
+ * Spawns an apocalyptic volley of homing Proton Torpedoes for the Hyper Counter-Strike
+ */
+export function createProtonTorpedoVolley(
+  origin: THREE.Vector3,
+  targets: CombatShip[]
+): ProtonTorpedo[] {
+  const activeTargets = targets.filter((s) => !s.isDead);
+  const count = Math.max(4, Math.min(8, activeTargets.length * 2));
+  const torpedoes: ProtonTorpedo[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const target = activeTargets[i % Math.max(1, activeTargets.length)];
+    const angle = (i / count) * Math.PI * 2;
+    // Initial outward spread arc before homing onto target
+    const spread = new THREE.Vector3(Math.cos(angle) * 1.5, Math.sin(angle) * 1.5, 0.5);
+
+    torpedoes.push({
+      id: Date.now() + i * 100 + Math.random(),
+      pos: origin.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, 0)),
+      vel: spread.clone().multiplyScalar(4.0),
+      targetShipId: target?.id,
+      targetPos: target ? target.position.clone() : new THREE.Vector3(0, 0, 0),
+      speed: 12.0 + Math.random() * 4.0,
+      life: 2.2,
+      trail: [],
+    });
+  }
+
+  return torpedoes;
+}
+
+/**
  * Spawns explosion debris particles when an enemy starship is destroyed
  */
 export function createExplosionDebris(position: THREE.Vector3): ExplosionParticle[] {
   const particles: ExplosionParticle[] = [];
-  const count = 32;
+  const count = 36;
 
-  // Star Wars fiery plasma colors: gold, electric orange, bright cyan, diamond white
+  // Star Wars fiery plasma colors: gold, electric orange, bright cyan, diamond white, imperial scarlet
   const colors = [
     new THREE.Color('#ffbe0b'),
     new THREE.Color('#fb5607'),
-    new THREE.Color('#ff006e'),
+    new THREE.Color('#ff0055'),
     new THREE.Color('#38bdf8'),
+    new THREE.Color('#00f0ff'),
     new THREE.Color('#ffffff'),
   ];
 
@@ -359,7 +491,7 @@ export function createExplosionDebris(position: THREE.Vector3): ExplosionParticl
     // Spherical random outward blast
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
-    const speed = 3.5 + Math.random() * 6.0;
+    const speed = 4.2 + Math.random() * 7.5;
 
     const vel = new THREE.Vector3(
       Math.sin(phi) * Math.cos(theta) * speed,
@@ -368,16 +500,41 @@ export function createExplosionDebris(position: THREE.Vector3): ExplosionParticl
     );
 
     particles.push({
-      pos: position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4)),
+      pos: position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5)),
       vel,
       rot: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI),
-      rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12),
-      scale: 0.12 + Math.random() * 0.22,
+      rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16),
+      scale: 0.14 + Math.random() * 0.28,
       color: colors[Math.floor(Math.random() * colors.length)],
       life: 1.0,
-      maxLife: 0.8 + Math.random() * 0.6,
+      maxLife: 0.9 + Math.random() * 0.7,
     });
   }
 
   return particles;
+}
+
+export interface ActivePickup {
+  id: number;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  rot: THREE.Euler;
+  rotSpeed: THREE.Vector3;
+  life: number;
+  maxLife: number;
+}
+
+/**
+ * Spawns an energetic Core Reactor Energy Cell (+15% Core Energy restore pickup)
+ */
+export function createReactorPickup(position: THREE.Vector3): ActivePickup {
+  return {
+    id: Date.now() + Math.random(),
+    pos: position.clone(),
+    vel: new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5 + 0.2, (Math.random() - 0.5) * 0.5),
+    rot: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, 0),
+    rotSpeed: new THREE.Vector3(1.8, 2.8, 1.2),
+    life: 12.0,
+    maxLife: 12.0,
+  };
 }
