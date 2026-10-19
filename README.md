@@ -59,13 +59,46 @@ Engage Imperial starfighter squadrons in full 3D space, defend your starfighter'
 | **Auto-Aim Assist** | **Toggle in HUD / Click** | When enabled, leads blaster fire directly toward the closest hostile starship in view. |
 | **Deflect Incoming Bolts** | **Left Click (Incoming Bolt)** | Intercepts incoming plasma bolts mid-flight to deflect them back and recharge energy. |
 | **Collect Reactor Cell** | **Left Click (Floating Canister)** | Collects drifting green Core Reactor Cells for an immediate `+15%` core restore. |
-| **Hyper Counter-Strike** | **[Spacebar]** or **HUD Button** | Unleashes homing Proton Torpedoes once blaster power reaches 100%. |
-| **Orbit Camera / Look Around** | **Click & Drag (Mouse)** | Sweeps the cockpit view to locate flanking or rear Imperial fighters. |
+| **Proton Torpedo Volley** | **[Spacebar]** or **HUD Button** | Unleashes homing Proton Torpedoes (requires 100% Overdrive + Torpedo Ammo; 12s reload). |
+| **Death Star Superweapon** | **[Key D]** or **Targeting HUD** | Fires orbital superlaser once capacitor reaches 100% from combat kills/deflections. |
+| **Drag & Adjust HUD Windows** | **Click & Drag (Grip Handle)** | Drag Droid R4-T9 or the Targeting Window anywhere on screen; includes preset dock buttons. |
+| **Orbit Camera / Look Around** | **Click & Drag Viewport** | Sweeps the cockpit view to locate flanking or rear Imperial fighters. |
 | **Zoom View** | **Mouse Scroll Wheel** | Adjusts camera field of view and depth. |
 
 ---
 
 ### Combat Mechanics
+
+#### Draggable & Customizable Cockpit HUD
+Players can completely adjust their tactical cockpit display:
+- **DROID R4-T9 Co-Pilot Guide**: Equipped with a top drag handle (`GripHorizontal`). Drag anywhere on screen with automatic viewport clamping. Includes layout presets (`TOP-L`, `TOP-R`, `BOT-L`, `BOT-R`, `RESET`) and width modes (`Compact 240px`, `Normal 290px`, `Wide 340px`). Position and width persist in `localStorage`.
+- **Targeting Window**: Equipped with a top drag handle. Can be positioned freely across the screen or docked via presets. Features a `Compact / Full` toggle.
+
+---
+
+#### Balanced Proton Torpedo Volley (Space)
+To ensure tactical gameplay and prevent automatic instant wins:
+1. **Limited Ordnance Ammo**: Starts each sector with **2 Torpedoes** (capacity: 2). Each volley consumes 1 Torpedo charge.
+2. **100% Overdrive Required**: Blaster power must reach 100% through combat shooting, combos, and deflections.
+3. **12-Second Tactical Cooldown**: Once fired, torpedo tubes require a 12-second reload period before another volley can be launched.
+4. **Earned Restock Mechanism**:
+   - Reaching a **5x or 8x Combo streak** awards `+1 Torpedo Ammo`.
+   - Destroying an **Elite TIE Advanced** awards `+1 Torpedo Ammo`.
+   - Sector Wave clearance fully replenishes torpedo ammo.
+
+---
+
+#### Death Star Superweapon System
+Harness the devastating power of the orbital superlaser:
+1. **Capacitor Charging**: The orbital superlaser capacitor charges as you engage hostiles:
+   - Normal starship kill: `+15%` capacitor charge.
+   - Elite TIE Advanced kill: `+30%` capacitor charge.
+   - Perfect plasma deflection: `+10%` capacitor charge.
+   - Sector wave clearance: `+25%` bonus charge.
+2. **Superlaser Unleashed**: At `100%` capacitor charge, the Targeting Window unlocks the flashing `FIRE SUPERLASER [D]` button (or press `[Key D]`).
+3. **Cinematic Discharge**: 8 green tributary beams converge into the focal dish, discharging a colossal sector-sweeping emerald blast that obliterates active starfighters with screen shake and awards `+150` bonus score!
+
+---
 
 #### The Imperial Core Strike System
 1. **Target Acquisition**: Hostile starships periodically select your cockpit Core Reactor as a primary target. Only one ship executes a Core Lock at any given moment to keep combat fair and skill-based.

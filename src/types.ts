@@ -11,7 +11,7 @@ export type ClickMode =
 
 export type BrainwaveFrequency = 'gamma' | 'beta' | 'alpha' | 'theta';
 
-export type ColorThemeId = 'cyberpunk' | 'solarGold' | 'amethyst' | 'matrix' | 'iceQuantum';
+export type ColorThemeId = 'layer7x' | 'cyberpunk' | 'solarGold' | 'amethyst' | 'matrix' | 'iceQuantum';
 
 export interface ColorTheme {
   id: ColorThemeId;
@@ -105,6 +105,15 @@ export interface CombatStats {
   isGameOver: boolean;           // True when core is breached and game over triggered
   eliteKills: number;            // Count of elite TIE Advanced destroyed (+8% core restore)
   deflections: number;           // Count of incoming plasma deflections (+3% core restore)
+  // Proton Torpedo Ordnance Balance (No unlimited spam / prevents automatic win)
+  torpedoAmmo: number;           // Current torpedoes (e.g. 2 per wave)
+  maxTorpedoAmmo: number;        // Max capacity (default: 2)
+  torpedoCooldown: number;       // Seconds remaining before torpedoes can be fired again (0 = ready)
+  // Death Star Superweapon System
+  deathStarCharge: number;       // 0 to 100% orbital superlaser capacitor charge
+  deathStarCharged: boolean;     // Whether Death Star superlaser capacitor is ready
+  deathStarCharging: boolean;    // True while superlaser is firing
+  deathStarStrikesUsed: number;  // Total superweapon strikes executed
   activeLockOn?: {
     shipId: string;
     shipName: string;

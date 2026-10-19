@@ -65,6 +65,7 @@ interface NeuralSceneProps {
           | 'saberclash'
           | 'superlaser'
           | 'hypertorpedo'
+          | 'deathstar_superweapon'
           | 'restart_wave'
           | 'restart_mission'
           | 'breach_explosion'
@@ -152,8 +153,8 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
 
     // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#030307'); // Deep cosmic black
-    scene.fog = new THREE.FogExp2('#030307', 0.04);
+    scene.background = new THREE.Color('#080b0c'); // 7LayerX near-black
+    scene.fog = new THREE.FogExp2('#080b0c', 0.038);
 
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
@@ -612,20 +613,89 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       shockwavesRef.current.push(wave);
     };
 
-    const triggerSuperlaser = () => {
+    const triggerDeathStarSuperweapon = () => {
       neuralAudio.playSuperlaser();
-      bloomFlareRef.current = 3.0;
+      bloomFlareRef.current = 4.5;
+      cameraShakeRef.current.set(
+        (Math.random() - 0.5) * 2.2,
+        (Math.random() - 0.5) * 2.2,
+        (Math.random() - 0.5) * 1.5
+      );
+
+      // Colossal emerald shockwave radiating from the Death Star focal point
+      const focal = new THREE.Vector3(0.65, 0.65, 2.1);
       const wave: Shockwave = {
         id: Date.now(),
-        epicenter: { x: 0.65, y: 0.65, z: 2.1 },
+        epicenter: { x: focal.x, y: focal.y, z: focal.z },
         startTime: performance.now(),
-        speed: 9.5,
-        strength: 1.6,
+        speed: 14.0,
+        strength: 2.5,
         radius: 0.0,
-        maxRadius: 6.5,
-        duration: 1800,
+        maxRadius: 10.0,
+        duration: 2200,
       };
       shockwavesRef.current.push(wave);
+
+      // Fire 8 tributary converging green beams into laserBoltsRef
+      const emeraldCol = new THREE.Color('#d2f27c');
+      const whiteCoreCol = new THREE.Color('#eef2ef');
+      for (let beam = 0; beam < 8; beam++) {
+        const angle = (beam * Math.PI) / 4;
+        const rimX = 0.55 + 0.5 * Math.cos(angle);
+        const rimY = 0.55 + 0.5 * Math.sin(angle);
+        const rimZ = 1.15;
+        const dir = new THREE.Vector3().subVectors(focal, new THREE.Vector3(rimX, rimY, rimZ)).normalize();
+
+        laserBoltsRef.current.push({
+          x: rimX,
+          y: rimY,
+          z: rimZ,
+          vx: dir.x * 28.0,
+          vy: dir.y * 28.0,
+          vz: dir.z * 28.0,
+          life: 1.2,
+          color: emeraldCol,
+        });
+      }
+
+      // Main superlaser blast stream bursting forward from focal point across sector
+      for (let burst = 0; burst < 14; burst++) {
+        const spreadX = (Math.random() - 0.5) * 0.16;
+        const spreadY = (Math.random() - 0.5) * 0.16;
+        laserBoltsRef.current.push({
+          x: focal.x + spreadX,
+          y: focal.y + spreadY,
+          z: focal.z,
+          vx: spreadX * 12,
+          vy: spreadY * 12,
+          vz: 48.0 + Math.random() * 8.0,
+          life: 1.8,
+          color: burst % 2 === 0 ? emeraldCol : whiteCoreCol,
+        });
+      }
+
+      // Obliterate active enemy starships in the blast zone
+      const activeShips = combatSquadronRef.current.filter((s) => !s.isDead && s.group.visible);
+      const targets = activeShips.slice(0, 2);
+      targets.forEach((ship) => {
+        ship.isDead = true;
+        ship.group.visible = false;
+        ship.respawnTimer = 4.0;
+        const debris = createExplosionDebris(ship.position);
+        activeDebrisRef.current.push(...debris);
+
+        const proj = ship.position.clone().project(camera);
+        const screenW = renderer.domElement.clientWidth || window.innerWidth;
+        const screenH = renderer.domElement.clientHeight || window.innerHeight;
+        onShipDestroyed?.({
+          points: 150,
+          screenX: ((proj.x + 1) * 0.5) * screenW,
+          screenY: ((-proj.y + 1) * 0.5) * screenH,
+          shipName: `${ship.name} [SUPERLASER]`,
+          isKill: true,
+          isElite: ship.isElite,
+        });
+      });
     };
 
     const triggerResetWave = (targetWave: number) => {
@@ -688,7 +758,7 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
         else if (action === 'blaster') triggerBlaster();
         else if (action === 'force') triggerForce();
         else if (action === 'saberclash') triggerSaberClash();
-        else if (action === 'superlaser') triggerSuperlaser();
+        else if (action === 'superlaser' || action === 'deathstar_superweapon') triggerDeathStarSuperweapon();
         else if (action === 'hypertorpedo') triggerHyperProtonTorpedoes();
         else if (action === 'restart_wave') triggerResetWave(waveRef.current);
         else if (action === 'restart_mission') triggerResetWave(1);

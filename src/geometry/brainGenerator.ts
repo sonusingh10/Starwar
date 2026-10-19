@@ -2,6 +2,16 @@ import * as THREE from 'three';
 import { BrainNode, ColorTheme, ColorThemeId } from '../types';
 
 export const COLOR_THEMES: Record<ColorThemeId, ColorTheme> = {
+  layer7x: {
+    id: 'layer7x',
+    name: '7LayerX Tactical',
+    description: 'Dark charcoal, subdued teal & emerald depths with signature lime highlights',
+    baseColor: '#283231',
+    midColor: '#10b981',
+    highColor: '#d2f27c',
+    coreColor: '#eef2ef',
+    ambientColor: '#151c1d',
+  },
   cyberpunk: {
     id: 'cyberpunk',
     name: 'Neural Cyberpunk',

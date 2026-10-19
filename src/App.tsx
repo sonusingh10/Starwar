@@ -18,7 +18,7 @@ export default function App() {
   const [config, setConfig] = useState<SimulationConfig>({
     clickMode: 'shockwave',
     brainwave: 'alpha',
-    theme: 'cyberpunk', // Matches user's uploaded images
+    theme: 'layer7x', // 7LayerX Tactical visual identity
     currentShape: 'brain', // Default: 3D Anatomical Neural Mesh
     autoMorph: false,
     autoMorphInterval: 8,
@@ -77,6 +77,15 @@ export default function App() {
     isGameOver: false,
     eliteKills: 0,
     deflections: 0,
+    // Proton Torpedo Ordnance Balance (No unlimited spam / prevents automatic win)
+    torpedoAmmo: 2,
+    maxTorpedoAmmo: 2,
+    torpedoCooldown: 0,
+    // Death Star Superweapon System
+    deathStarCharge: 0,
+    deathStarCharged: false,
+    deathStarCharging: false,
+    deathStarStrikesUsed: 0,
     activeLockOn: null,
   });
 
@@ -98,6 +107,7 @@ export default function App() {
           | 'saberclash'
           | 'superlaser'
           | 'hypertorpedo'
+          | 'deathstar_superweapon'
           | 'restart_wave'
           | 'restart_mission'
           | 'breach_explosion'
@@ -168,15 +178,11 @@ export default function App() {
           comboText: comboTag,
           subText: isElite ? '+8% CORE REPAIR! ⚡' : shipName.includes('DEFLECTED') ? 'DEFLECTED! 🛡️' : undefined,
           color:
-            isElite
-              ? '#fbbf24'
-              : nextCombo >= 4
-              ? '#ff0055'
-              : nextCombo >= 3
-              ? '#fb5607'
+            isElite || nextCombo >= 3
+              ? '#d2f27c'
               : nextCombo >= 2
-              ? '#ffbe0b'
-              : '#38bdf8',
+              ? '#a3e635'
+              : '#eef2ef',
           createdAt: now,
         };
 
@@ -185,6 +191,55 @@ export default function App() {
         setTimeout(() => {
           setFloatingNotices((list) => list.filter((n) => n.id !== noticeId));
         }, 1200);
+
+        // Death Star Superweapon orbital capacitor charge (+15% normal, +30% elite kill)
+        const superGain = isElite ? 30 : 15;
+        const nextDeathStarCharge = Math.min(100, (prev.deathStarCharge ?? 0) + superGain);
+        const nextDeathStarCharged = nextDeathStarCharge >= 100;
+
+        // Balanced Proton Torpedo Ordnance restock: +1 Torpedo on 5x/8x combo streak or Elite kill (capped at maxTorpedoAmmo)
+        let earnedTorpedo = false;
+        let nextAmmo = prev.torpedoAmmo ?? 2;
+        if ((isElite || nextCombo === 5 || nextCombo === 8) && nextAmmo < (prev.maxTorpedoAmmo ?? 2)) {
+          nextAmmo += 1;
+          earnedTorpedo = true;
+        }
+
+        if (earnedTorpedo) {
+          neuralAudio.playPickupCollect();
+          const ammoNoticeId = Date.now() + Math.random() + 1;
+          const ammoNotice: FloatingPointNotice = {
+            id: ammoNoticeId,
+            x: screenX,
+            y: screenY - 32,
+            text: '+1 TORPEDO RESTOCKED! 🚀',
+            subText: `ORDNANCE: ${nextAmmo}/${prev.maxTorpedoAmmo ?? 2}`,
+            color: '#d2f27c',
+            createdAt: now,
+          };
+          setFloatingNotices((list) => [...list.slice(-7), ammoNotice]);
+          setTimeout(() => {
+            setFloatingNotices((list) => list.filter((n) => n.id !== ammoNoticeId));
+          }, 1400);
+        }
+
+        if (nextDeathStarCharged && !prev.deathStarCharged) {
+          neuralAudio.playPointScore(4);
+          const superNoticeId = Date.now() + Math.random() + 2;
+          const superNotice: FloatingPointNotice = {
+            id: superNoticeId,
+            x: window.innerWidth / 2,
+            y: window.innerHeight * 0.35,
+            text: 'SUPERWEAPON PRIMED! 🟢',
+            subText: 'PRESS [D] OR CLICK FIRE SUPERLASER',
+            color: '#10b981',
+            createdAt: now,
+          };
+          setFloatingNotices((list) => [...list.slice(-7), superNotice]);
+          setTimeout(() => {
+            setFloatingNotices((list) => list.filter((n) => n.id !== superNoticeId));
+          }, 1600);
+        }
 
         return {
           ...prev,
@@ -202,6 +257,9 @@ export default function App() {
           powerTier: nextTier,
           waveKills: nextWaveKills,
           isVictorious: didWin ? true : prev.isVictorious,
+          torpedoAmmo: nextAmmo,
+          deathStarCharge: nextDeathStarCharge,
+          deathStarCharged: nextDeathStarCharged,
         };
       });
     },
@@ -339,13 +397,17 @@ export default function App() {
           text: `+${points}`,
           comboText: isCoreStrike ? 'PERFECT DEFLECT! 🛡️' : 'DEFLECTED! 🛡️',
           subText: isCoreStrike ? '+3% CORE ENERGY! ⚡' : undefined,
-          color: isCoreStrike ? '#38bdf8' : '#22c55e',
+          color: '#d2f27c',
           createdAt: now,
         };
         setFloatingNotices((list) => [...list.slice(-7), notice]);
         setTimeout(() => {
           setFloatingNotices((list) => list.filter((n) => n.id !== noticeId));
         }, 1200);
+
+        // Deflections also grant +10% orbital capacitor charge to Death Star superweapon
+        const nextDeathStarCharge = Math.min(100, (prev.deathStarCharge ?? 0) + 10);
+        const nextDeathStarCharged = nextDeathStarCharge >= 100;
 
         return {
           ...prev,
@@ -359,6 +421,8 @@ export default function App() {
           coreEnergy: nextCore,
           blasterPower: nextPower,
           powerTier: nextTier,
+          deathStarCharge: nextDeathStarCharge,
+          deathStarCharged: nextDeathStarCharged,
         };
       });
     },
@@ -412,35 +476,169 @@ export default function App() {
     []
   );
 
-  // Hyper Counter-Strike Torpedo Volley
+  // Balanced Hyper Counter-Strike Torpedo Volley (Space)
+  // Protected against infinite spam so player does not automatically win
   const handleUnleashHyperStrike = useCallback(() => {
-    triggerActionRef.current?.('hypertorpedo');
+    let canFire = false;
+    let firedRemainingAmmo = 0;
 
-    // Reset power meter
-    setCombatStats((prev) => ({
-      ...prev,
-      blasterPower: 0,
-      powerTier: 1,
-      score: prev.score + 50,
-    }));
+    setCombatStats((prev) => {
+      if (prev.isGameOver) return prev;
 
-    // Floating Notice for Hyper Strike
-    const noticeId = Date.now() + Math.random();
-    setFloatingNotices((list) => [
-      ...list,
-      {
-        id: noticeId,
-        x: window.innerWidth / 2,
-        y: window.innerHeight * 0.45,
-        text: '+50 PROTON STRIKE!',
-        comboText: 'MAX OVERDRIVE 🔥',
-        color: '#ff0055',
-        createdAt: Date.now(),
-      },
-    ]);
-    setTimeout(() => {
-      setFloatingNotices((list) => list.filter((n) => n.id !== noticeId));
-    }, 1500);
+      const currentAmmo = prev.torpedoAmmo ?? 2;
+      const cooldown = prev.torpedoCooldown ?? 0;
+      const isPowerFull = (prev.blasterPower ?? 0) >= 100;
+
+      // 1. Check Ordnance Ammunition
+      if (currentAmmo <= 0) {
+        neuralAudio.playAlarmWarning();
+        const noticeId = Date.now() + Math.random();
+        setFloatingNotices((list) => [
+          ...list,
+          {
+            id: noticeId,
+            x: window.innerWidth / 2,
+            y: window.innerHeight * 0.45,
+            text: 'ORDNANCE EMPTY (0/2)',
+            subText: 'BUILD 5x COMBO OR DEFEAT ELITE TIE TO RELOAD ⚠️',
+            color: '#f87171',
+            createdAt: Date.now(),
+          },
+        ]);
+        setTimeout(() => {
+          setFloatingNotices((list) => list.filter((n) => n.id !== noticeId));
+        }, 1400);
+        return prev;
+      }
+
+      // 2. Check Reload Cooldown
+      if (cooldown > 0) {
+        const noticeId = Date.now() + Math.random();
+        setFloatingNotices((list) => [
+          ...list,
+          {
+            id: noticeId,
+            x: window.innerWidth / 2,
+            y: window.innerHeight * 0.45,
+            text: 'TORPEDO TUBES COOLING',
+            subText: `${cooldown.toFixed(1)}s RELOAD REMAINING`,
+            color: '#98a5a2',
+            createdAt: Date.now(),
+          },
+        ]);
+        setTimeout(() => {
+          setFloatingNotices((list) => list.filter((n) => n.id !== noticeId));
+        }, 1200);
+        return prev;
+      }
+
+      // 3. Check Overdrive Power (100% required)
+      if (!isPowerFull) {
+        const noticeId = Date.now() + Math.random();
+        setFloatingNotices((list) => [
+          ...list,
+          {
+            id: noticeId,
+            x: window.innerWidth / 2,
+            y: window.innerHeight * 0.45,
+            text: 'OVERDRIVE REQUIRED (100%)',
+            subText: `${Math.round(prev.blasterPower ?? 0)}% CHARGED`,
+            color: '#98a5a2',
+            createdAt: Date.now(),
+          },
+        ]);
+        setTimeout(() => {
+          setFloatingNotices((list) => list.filter((n) => n.id !== noticeId));
+        }, 1200);
+        return prev;
+      }
+
+      // All requirements met: fire volley and deduct 1 ammo with 12s tactical cooldown
+      canFire = true;
+      firedRemainingAmmo = currentAmmo - 1;
+      return {
+        ...prev,
+        torpedoAmmo: firedRemainingAmmo,
+        torpedoCooldown: 12.0, // 12 second tactical reload cooldown
+        blasterPower: 0,
+        powerTier: 1,
+        score: prev.score + 50,
+      };
+    });
+
+    if (canFire) {
+      triggerActionRef.current?.('hypertorpedo');
+      const noticeId = Date.now() + Math.random();
+      setFloatingNotices((list) => [
+        ...list,
+        {
+          id: noticeId,
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.45,
+          text: '+50 PROTON TORPEDO VOLLEY!',
+          comboText: 'MAX OVERDRIVE 🔥',
+          subText: `ORDNANCE: ${firedRemainingAmmo}/2 (12s RELOAD)`,
+          color: '#d2f27c',
+          createdAt: Date.now(),
+        },
+      ]);
+      setTimeout(() => {
+        setFloatingNotices((list) => list.filter((n) => n.id !== noticeId));
+      }, 1500);
+    }
+  }, []);
+
+  // Death Star Orbital Superlaser Superweapon Strike
+  const handleFireDeathStarSuperweapon = useCallback(() => {
+    let fired = false;
+    setCombatStats((prev) => {
+      if (prev.isGameOver || (prev.deathStarCharge ?? 0) < 100) return prev;
+      fired = true;
+      return {
+        ...prev,
+        deathStarCharge: 0,
+        deathStarCharged: false,
+        deathStarStrikesUsed: (prev.deathStarStrikesUsed || 0) + 1,
+        score: prev.score + 150,
+      };
+    });
+
+    if (fired) {
+      triggerActionRef.current?.('deathstar_superweapon');
+      const noticeId = Date.now() + Math.random();
+      setFloatingNotices((list) => [
+        ...list,
+        {
+          id: noticeId,
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.35,
+          text: '+150 SUPERLASER STRIKE!',
+          comboText: 'DEATH STAR SUPERWEAPON 🟢',
+          subText: 'ORBITAL CAPACITOR DISCHARGED',
+          color: '#10b981',
+          createdAt: Date.now(),
+        },
+      ]);
+      setTimeout(() => {
+        setFloatingNotices((list) => list.filter((n) => n.id !== noticeId));
+      }, 1800);
+    }
+  }, []);
+
+  // Cooldown countdown timer for Proton Torpedo reload
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCombatStats((prev) => {
+        if ((prev.torpedoCooldown ?? 0) > 0) {
+          return {
+            ...prev,
+            torpedoCooldown: Math.max(0, (prev.torpedoCooldown ?? 0) - 0.2),
+          };
+        }
+        return prev;
+      });
+    }, 200);
+    return () => clearInterval(timer);
   }, []);
 
   // Advance to Next Sector Wave
@@ -457,6 +655,9 @@ export default function App() {
       coreEnergy: Math.min(100, (prev.coreEnergy || 100) + 25), // Wave clear reward
       blasterPower: 25,
       powerTier: 1,
+      torpedoAmmo: prev.maxTorpedoAmmo || 2, // Full torpedo ammo replenish
+      torpedoCooldown: 0,
+      deathStarCharge: Math.min(100, (prev.deathStarCharge || 0) + 25), // Wave clear superweapon reward
       activeLockOn: null,
       incomingThreatWarning: false,
     }));
@@ -476,6 +677,10 @@ export default function App() {
       incomingThreatWarning: false,
       blasterPower: 0,
       powerTier: 1,
+      torpedoAmmo: 2,
+      torpedoCooldown: 0,
+      deathStarCharge: 0,
+      deathStarCharged: false,
     }));
   }, []);
 
@@ -504,26 +709,47 @@ export default function App() {
       isGameOver: false,
       eliteKills: 0,
       deflections: 0,
+      torpedoAmmo: 2,
+      maxTorpedoAmmo: 2,
+      torpedoCooldown: 0,
+      deathStarCharge: 0,
+      deathStarCharged: false,
+      deathStarCharging: false,
+      deathStarStrikesUsed: 0,
       activeLockOn: null,
     });
   }, []);
 
-  // Keyboard shortcut: [Space] to fire Hyper Counter-Strike when power is ready
+  // Keyboard shortcut listener:
+  // [Space]: Fire Proton Torpedo Volley when Overdrive & Ammo are ready
+  // [KeyD]: Fire Death Star Superweapon when Orbital Capacitor is 100%
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.code === 'Space' &&
-        combatStats.blasterPower >= 100 &&
-        config.combatMode &&
-        !combatStats.isGameOver
-      ) {
+      if (!config.combatMode || combatStats.isGameOver) return;
+
+      // Spacebar for Proton Torpedo Volley
+      if (e.code === 'Space') {
         e.preventDefault();
         handleUnleashHyperStrike();
+      }
+
+      // KeyD for Death Star Superlaser
+      if (e.code === 'KeyD') {
+        if ((combatStats.deathStarCharge ?? 0) >= 100) {
+          e.preventDefault();
+          handleFireDeathStarSuperweapon();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [combatStats.blasterPower, combatStats.isGameOver, config.combatMode, handleUnleashHyperStrike]);
+  }, [
+    combatStats.deathStarCharge,
+    combatStats.isGameOver,
+    config.combatMode,
+    handleUnleashHyperStrike,
+    handleFireDeathStarSuperweapon,
+  ]);
 
   const handleUpdateConfig = (updates: Partial<SimulationConfig>) => {
     setConfig((prev) => ({ ...prev, ...updates }));
@@ -582,7 +808,13 @@ export default function App() {
   }, [config.autoMorph, config.starwarsTour, config.autoMorphInterval]);
 
   return (
-    <main className="relative w-screen h-screen overflow-hidden bg-[#030307]">
+    <main className="relative w-screen h-screen overflow-hidden bg-[#080b0c] text-[#eef2ef] font-sans antialiased">
+      {/* 7LayerX subtle low-contrast green and teal ambient glows */}
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute -top-[15%] -left-[10%] w-[50vw] h-[50vw] rounded-full bg-teal-500/[0.04] blur-[120px]" />
+        <div className="absolute -bottom-[20%] -right-[10%] w-[55vw] h-[55vw] rounded-full bg-emerald-500/[0.035] blur-[140px]" />
+        <div className="absolute top-[35%] left-[55%] -translate-x-1/2 -translate-y-1/2 w-[50vw] h-[50vw] rounded-full bg-[#d2f27c]/[0.015] blur-[160px]" />
+      </div>
       {/* Three.js 3D Viewport with Two-Way Star Wars Target Combat & Core Strike AI */}
       <NeuralScene
         config={config}
@@ -613,6 +845,7 @@ export default function App() {
         onToggleCombatMode={() => handleUpdateConfig({ combatMode: !config.combatMode })}
         onToggleAutoAim={() => handleUpdateConfig({ autoAimBlaster: !config.autoAimBlaster })}
         onUnleashHyperStrike={handleUnleashHyperStrike}
+        onFireDeathStarSuperweapon={handleFireDeathStarSuperweapon}
         onNextWave={handleNextWave}
         onDismissVictory={() => setCombatStats((prev) => ({ ...prev, isVictorious: false }))}
         onRestartWave={handleRestartWave}

@@ -446,7 +446,8 @@ export function createProtonTorpedoVolley(
   targets: CombatShip[]
 ): ProtonTorpedo[] {
   const activeTargets = targets.filter((s) => !s.isDead);
-  const count = Math.max(4, Math.min(8, activeTargets.length * 2));
+  // Balanced tactical ordnance: fires 2 targeted homing torpedoes (prevents automatic full-wave instant win)
+  const count = Math.min(2, Math.max(1, activeTargets.length));
   const torpedoes: ProtonTorpedo[] = [];
 
   for (let i = 0; i < count; i++) {

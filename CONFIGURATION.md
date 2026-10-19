@@ -79,6 +79,28 @@ The Core Strike system balance is strictly calibrated for fair, skill-based game
 | **Game Over Threshold** | `0%` | `src/App.tsx:handleCoreDamage` | Triggers single-execution reactor breach sequence. |
 | **Lock-On Duration** | `3.0s` | `src/geometry/starwarsCombat.ts` | Countdown window before an enemy releases its charged bolt. |
 | **Concurrent Locks** | `1` | `src/components/NeuralScene.tsx` | Only 1 enemy locks onto the core at a time to prevent unfair simultaneous hits. |
+| **Max Torpedo Ammo** | `2` | `src/types.ts` | Maximum simultaneous proton torpedo capacity. |
+| **Torpedo Cooldown** | `12.0s` | `src/App.tsx` | Tactical reload duration between torpedo volleys to prevent spamming. |
+| **Torpedo Overdrive Cost** | `100%` | `src/App.tsx` | Consumes full overdrive meter; resets blaster power to 0%. |
+| **Torpedo Restock Streak** | `5x / 8x` | `src/App.tsx` | Combo threshold that earns +1 torpedo ammo. |
+| **Torpedo Elite Restock** | `+1` | `src/App.tsx` | Destroying an Elite TIE Advanced x1 restocks +1 torpedo. |
+| **Death Star Superweapon Cost** | `100%` | `src/App.tsx` | Requires 100% orbital superlaser capacitor charge. |
+| **Superweapon Charge Rate** | `+15%` | `src/App.tsx` | Capacitor gained per standard enemy ship destroyed. |
+| **Superweapon Elite Rate** | `+30%` | `src/App.tsx` | Capacitor gained on Elite TIE Advanced destruction. |
+| **Superweapon Deflect Rate**| `+10%` | `src/App.tsx` | Capacitor gained per mid-air plasma deflection. |
+| **Superweapon Wave Bonus**  | `+25%` | `src/App.tsx` | Capacitor awarded upon completing a sector wave. |
+| **Superweapon Score**       | `+150` | `src/App.tsx` | Points awarded upon discharging orbital superlaser. |
+
+---
+
+### 2.1 Draggable & Adjustable HUD State Persistence
+
+Managed via HTML5 `localStorage`:
+
+- **`r4t9_guide_pos`**: Stored as `{ x: number, y: number }`. Persists the custom viewport coordinates of the Droid R4-T9 co-pilot guide.
+- **`r4t9_guide_width`**: Stored as `'compact' | 'normal' | 'wide'`. Adjusts guide width between `240px`, `290px`, and `340px`.
+- **`targeting_window_pos`**: Stored as `{ x: number, y: number }`. Persists the custom viewport coordinates of the Targeting Window.
+- **`targeting_compact`**: Stored as boolean string (`'true' | 'false'`). Toggles between minimal score display and complete telemetry.
 
 ---
 
