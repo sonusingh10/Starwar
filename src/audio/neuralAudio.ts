@@ -1139,6 +1139,262 @@ class NeuralAudioEngine {
     }
   }
 
+  /**
+   * Crackling fiery thermal blaster bolt discharge
+   */
+  public playFireBlaster() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(480, now);
+    osc.frequency.exponentialRampToValueAtTime(110, now + 0.18);
+
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+    // Fire crackle noise
+    const bufferSize = ctx.sampleRate * 0.18;
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.5));
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1200, now);
+    filter.Q.setValueAtTime(3, now);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.28, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start(now);
+    noise.stop(now + 0.19);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  }
+
+  /**
+   * Violent thermal fire impact & sizzling cockpit burn
+   */
+  public playThermalBurnImpact() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const sub = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    sub.type = 'triangle';
+    sub.frequency.setValueAtTime(180, now);
+    sub.frequency.exponentialRampToValueAtTime(45, now + 0.4);
+
+    subGain.gain.setValueAtTime(0.45, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+    sub.connect(subGain);
+    subGain.connect(ctx.destination);
+    sub.start(now);
+    sub.stop(now + 0.48);
+
+    // Incendiary flame sizzle noise
+    const bufferSize = ctx.sampleRate * 0.4;
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * 0.8;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2200, now);
+    filter.frequency.linearRampToValueAtTime(600, now + 0.35);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.35, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start(now);
+    noise.stop(now + 0.42);
+  }
+
+  /**
+   * Electromagnetic Ion EMP Wave shock & systems freeze sound
+   */
+  public playEmpDisruptor() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1400, now);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.6);
+
+    gain.gain.setValueAtTime(0.35, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.7);
+  }
+
+  /**
+   * Plasma Mirror Deflector reflecting projectiles back at enemy
+   */
+  public playPlasmaReflector() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, now);
+    osc.frequency.linearRampToValueAtTime(1760, now + 0.2);
+
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.38);
+  }
+
+  /**
+   * Power unlocked notification fanfare
+   */
+  public playPowerUnlocked() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const chords = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+    chords.forEach((freq, idx) => {
+      const time = now + idx * 0.08;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, time);
+
+      gain.gain.setValueAtTime(0.25, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(time);
+      osc.stop(time + 0.35);
+    });
+  }
+
+  /**
+   * Enemy homing missile ignition & launch whoosh
+   */
+  public playEnemyMissileLaunch() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // Low rocket ignition growl + ascending whoosh
+    const osc = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(80, now);
+    osc.frequency.exponentialRampToValueAtTime(320, now + 0.45);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(450, now);
+    filter.frequency.linearRampToValueAtTime(1400, now + 0.4);
+
+    gain.gain.setValueAtTime(0.01, now);
+    gain.gain.linearRampToValueAtTime(0.35, now + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.58);
+  }
+
+  /**
+   * Pulse alarm tone when an enemy missile is homing in on the player
+   */
+  public playEnemyMissileWarning() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(980, now);
+    osc.frequency.setValueAtTime(720, now + 0.08);
+
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.18);
+  }
+
+  /**
+   * Crisp explosion when player intercepts and detonates an incoming missile mid-air
+   */
+  public playMissileInterception() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // High-energy blast
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(650, now);
+    osc.frequency.exponentialRampToValueAtTime(60, now + 0.35);
+
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.42);
+  }
+
   public dispose() {
     if (this.droneOsc) {
       try {

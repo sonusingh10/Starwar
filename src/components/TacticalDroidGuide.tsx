@@ -62,10 +62,22 @@ const ROTATING_TIPS = [
     tone: 'tip' as const,
   },
   {
-    prefix: '*ALERT*',
-    tag: 'ELITE FIGHTERS',
-    text: 'TIE Advanced ships fire heavy 22% core strikes. Destroying them grants +8% Core repair, +30% Superlaser charge, and +1 Torpedo!',
+    prefix: '*TACTICAL*',
+    tag: 'INSTANT ARMAMENTS',
+    text: 'Use on-screen buttons for instant actions: WARP [W] to dash, SABER [C] to clash & deflect, SUPERLASER [X] for mega beam, and SCATTER [R] to blast!',
+    tone: 'tip' as const,
+  },
+  {
+    prefix: '*WARNING*',
+    tag: 'ENEMY ATTACK AI',
+    text: 'Enemy AI adapts to your speed! High combos and rapid kills trigger ELEVATED and OVERCHARGED modes with faster firing, multiple locks, and heavy core damage!',
     tone: 'warning' as const,
+  },
+  {
+    prefix: '*NEURAL*',
+    tag: 'BRAINWAVES TOGGLE',
+    text: 'Use the BRAINWAVES toggle in the top bar to turn cortex wave oscillations ON or OFF anytime according to your preference.',
+    tone: 'chatter' as const,
   },
 ];
 

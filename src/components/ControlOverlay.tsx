@@ -33,6 +33,9 @@ import {
   Shield,
   Bot,
   Flame,
+  User,
+  Edit3,
+  Check,
 } from 'lucide-react';
 import {
   BrainwaveFrequency,
@@ -62,6 +65,8 @@ interface ControlOverlayProps {
   ) => void;
   onNextShape: () => void;
   lastTriggeredMode: ClickMode | null;
+  isPilotModalOpen?: boolean;
+  onTogglePilotModal?: (open: boolean) => void;
 }
 
 export const ControlOverlay: React.FC<ControlOverlayProps> = ({
@@ -71,12 +76,23 @@ export const ControlOverlay: React.FC<ControlOverlayProps> = ({
   onTriggerAction,
   onNextShape,
   lastTriggeredMode,
+  isPilotModalOpen,
+  onTogglePilotModal,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<
     'shapes' | 'interaction' | 'brainwaves' | 'themes' | 'settings'
   >('shapes');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'starwars' | 'neural' | 'cosmic'>('all');
+  const [internalPilotModal, setInternalPilotModal] = useState(false);
+  const showPilotModal = isPilotModalOpen !== undefined ? isPilotModalOpen : internalPilotModal;
+  const setShowPilotModal = (val: boolean) => {
+    setInternalPilotModal(val);
+    onTogglePilotModal?.(val);
+  };
+  const [pilotInput, setPilotInput] = useState(() => {
+    return config.pilotName || localStorage.getItem('space_tour_pilot_name') || 'Commander Sonu';
+  });
 
   const clickModes: { id: ClickMode; label: string; icon: React.ReactNode; desc: string }[] = [
     {
@@ -274,19 +290,40 @@ export const ControlOverlay: React.FC<ControlOverlayProps> = ({
             <span className="hidden sm:inline">THE FORCE</span>
           </button>
 
-          {/* Star Wars Fleet Tour Toggle */}
-          <button
-            onClick={() => onChangeConfig({ starwarsTour: !config.starwarsTour, autoMorph: false })}
-            className={`p-1.5 px-2.5 rounded-lg transition-all text-xs flex items-center gap-1.5 ${
-              config.starwarsTour
-                ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
-                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/60'
-            }`}
-            title="Automatically tour all Star Wars ships with Hyperspace Jumps"
-          >
-            <FastForward className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden md:inline font-mono">WARP TOUR</span>
-          </button>
+          {/* Space Tour Toggle & Pilot Registration */}
+          <div className="flex items-center">
+            <button
+              onClick={() => {
+                if (!config.starwarsTour) {
+                  setShowPilotModal(true);
+                } else {
+                  onChangeConfig({ starwarsTour: false });
+                }
+              }}
+              className={`p-1.5 px-2.5 rounded-l-lg transition-all text-xs flex items-center gap-1.5 cursor-pointer ${
+                config.starwarsTour
+                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/60 border border-transparent'
+              }`}
+              title="Space Tour: Cruise automatically through all 3D Star Wars spacecraft with Hyperspace Jumps"
+            >
+              <FastForward className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden md:inline font-mono font-bold">SPACE TOUR</span>
+            </button>
+            <button
+              onClick={() => setShowPilotModal(true)}
+              className={`p-1.5 px-2 rounded-r-lg border-y border-r text-[10px] font-mono transition-all flex items-center gap-1 cursor-pointer ${
+                config.starwarsTour
+                  ? 'bg-amber-500/30 text-amber-200 border-amber-500/50 hover:bg-amber-500/40'
+                  : 'bg-neutral-800/80 text-neutral-300 border-neutral-700/80 hover:bg-neutral-700'
+              }`}
+              title="Customize Pilot / Commander Name for Space Tour & Dogfights"
+            >
+              <User className="w-3 h-3 text-amber-400" />
+              <span className="max-w-[70px] sm:max-w-[100px] truncate">{config.pilotName || 'Pilot'}</span>
+              <Edit3 className="w-2.5 h-2.5 text-neutral-400" />
+            </button>
+          </div>
 
           {/* Star Wars Dogfight Combat Mode Toggle */}
           <button
@@ -370,6 +407,21 @@ export const ControlOverlay: React.FC<ControlOverlayProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Space Tour Active Banner with Pilot Name */}
+      {config.starwarsTour && (
+        <div className="flex justify-center pointer-events-none -mt-1 mb-1">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 backdrop-blur-md border border-amber-500/70 text-xs font-mono text-amber-200 shadow-xl animate-pulse">
+            <Rocket className="w-4 h-4 text-amber-400" />
+            <span>
+              <strong className="text-amber-300 font-bold uppercase tracking-wider">
+                {config.pilotName ? `${config.pilotName}'S` : "COMMANDER'S"} SPACE TOUR ACTIVE
+              </strong>{' '}
+              • DESTINATION: <span className="text-amber-100 font-bold">{currentShapeObj?.name}</span>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Ergonomic Collapsible Bottom Control Dock */}
       <div className="pointer-events-auto self-center w-full max-w-5xl flex flex-col items-center">
@@ -685,29 +737,55 @@ export const ControlOverlay: React.FC<ControlOverlayProps> = ({
 
           {/* Tab Content 2: Brainwave Oscillations */}
           {activeTab === 'brainwaves' && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              {brainwaves.map((bw) => {
-                const isActive = config.brainwave === bw.id;
-                return (
-                  <button
-                    key={bw.id}
-                    onClick={() => onChangeConfig({ brainwave: bw.id })}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-cyan-500/10 border-cyan-400/80 ring-1 ring-cyan-400/40'
-                        : 'bg-[#101222]/60 border-neutral-800/80 hover:border-neutral-700 hover:bg-[#14172a]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-mono font-bold text-neutral-200">{bw.label}</span>
-                      <span className="text-xs font-mono text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded">
-                        {bw.hz}
-                      </span>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#090b16] border border-cyan-500/30">
+                <div className="flex items-center gap-2">
+                  <Activity className={`w-4 h-4 ${config.brainwavesEnabled !== false ? 'text-cyan-400 animate-pulse' : 'text-neutral-500'}`} />
+                  <div>
+                    <div className="text-xs font-mono font-bold text-neutral-200">
+                      Brainwave Telemetry: {config.brainwavesEnabled !== false ? 'ACTIVE (RESONANT)' : 'MUTED / OFF'}
                     </div>
-                    <div className="text-[11px] text-neutral-400">{bw.state}</div>
-                  </button>
-                );
-              })}
+                    <div className="text-[10px] text-neutral-400">
+                      Toggle dynamic cortex wave breathing & EEG frequencies
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => onChangeConfig({ brainwavesEnabled: config.brainwavesEnabled === false })}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all border cursor-pointer ${
+                    config.brainwavesEnabled !== false
+                      ? 'bg-cyan-500/20 border-cyan-400/80 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.25)]'
+                      : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                  }`}
+                >
+                  {config.brainwavesEnabled !== false ? 'TURN OFF' : 'TURN ON'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {brainwaves.map((bw) => {
+                  const isActive = config.brainwave === bw.id;
+                  return (
+                    <button
+                      key={bw.id}
+                      onClick={() => onChangeConfig({ brainwave: bw.id })}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-cyan-500/10 border-cyan-400/80 ring-1 ring-cyan-400/40'
+                          : 'bg-[#101222]/60 border-neutral-800/80 hover:border-neutral-700 hover:bg-[#14172a]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-mono font-bold text-neutral-200">{bw.label}</span>
+                        <span className="text-xs font-mono text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded">
+                          {bw.hz}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-neutral-400">{bw.state}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -923,6 +1001,115 @@ export const ControlOverlay: React.FC<ControlOverlayProps> = ({
           )}
         </div>
       </div>
+
+      {/* Pilot / Commander Registration Modal */}
+      {showPilotModal && (
+        <div
+          className="fixed inset-0 z-50 pointer-events-auto bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPilotModal(false);
+            }
+          }}
+        >
+          <div
+            className="bg-[#0b0e14] border border-amber-500/60 rounded-2xl p-5 max-w-md w-full shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-amber-500/30 mb-4">
+              <div className="flex items-center gap-2">
+                <Rocket className="w-5 h-5 text-amber-400" />
+                <h3 className="text-sm font-mono font-bold uppercase tracking-wider text-amber-300">
+                  SPACE TOUR: PILOT REGISTRATION
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPilotModal(false)}
+                className="text-neutral-300 hover:text-white text-sm font-mono px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 cursor-pointer transition-colors"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-300 mb-3">
+              Write your Commander / Pilot Call Sign. Your name will be featured during Space Tour cruise, cockpit telemetry, and mission logs:
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-[10px] font-mono uppercase text-amber-400/90 mb-1">
+                COMMANDER / PILOT CALL SIGN:
+              </label>
+              <input
+                type="text"
+                value={pilotInput}
+                onChange={(e) => setPilotInput(e.target.value)}
+                placeholder="e.g. Commander Sonu"
+                className="w-full bg-neutral-900 border border-neutral-700 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-amber-200 font-mono outline-none"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const finalName = pilotInput.trim() || 'Commander Sonu';
+                    localStorage.setItem('space_tour_pilot_name', finalName);
+                    onChangeConfig({ pilotName: finalName, starwarsTour: true, autoMorph: false });
+                    setShowPilotModal(false);
+                    onTriggerAction('hyperspace');
+                  } else if (e.key === 'Escape') {
+                    setShowPilotModal(false);
+                  }
+                }}
+              />
+            </div>
+
+            {/* Quick Callsign Buttons */}
+            <div className="mb-4">
+              <span className="text-[10px] font-mono text-neutral-400 block mb-1.5">QUICK SELECTION CALL SIGNS:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {['Commander Sonu', 'Red Leader', 'Ace Solo', 'Ghost One', 'Spectre Five'].map((callsign) => (
+                  <button
+                    key={callsign}
+                    type="button"
+                    onClick={() => setPilotInput(callsign)}
+                    className="text-[10px] font-mono px-2 py-1 rounded bg-neutral-800 hover:bg-amber-950/60 hover:text-amber-300 border border-neutral-700 hover:border-amber-500/50 text-neutral-300 transition-all cursor-pointer"
+                  >
+                    {callsign}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => {
+                  const finalName = pilotInput.trim() || 'Commander Sonu';
+                  localStorage.setItem('space_tour_pilot_name', finalName);
+                  onChangeConfig({ pilotName: finalName });
+                  setShowPilotModal(false);
+                }}
+                className="px-3.5 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-mono transition-all cursor-pointer"
+              >
+                SAVE NAME ONLY
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const finalName = pilotInput.trim() || 'Commander Sonu';
+                  localStorage.setItem('space_tour_pilot_name', finalName);
+                  onChangeConfig({ pilotName: finalName, starwarsTour: true, autoMorph: false });
+                  setShowPilotModal(false);
+                  onTriggerAction('hyperspace');
+                }}
+                className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs tracking-wider uppercase transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
+              >
+                <Rocket className="w-3.5 h-3.5 text-black" />
+                <span>ENGAGE SPACE TOUR</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

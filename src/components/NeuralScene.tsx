@@ -16,10 +16,16 @@ import {
   createExplosionDebris,
   createProtonTorpedoVolley,
   createReactorPickup,
+  createCoreHitSparks,
+  createFireSparks,
+  calculateEnemyAggression,
+  EnemyAggressionLevel,
   ActivePickup,
   CombatShip,
   EnemyBlasterBolt,
   ProtonTorpedo,
+  EnemyMissile,
+  createEnemyMissile,
   ExplosionParticle,
 } from '../geometry/starwarsCombat';
 
@@ -27,6 +33,9 @@ interface NeuralSceneProps {
   config: SimulationConfig;
   powerTier?: 1 | 2 | 3 | 4;
   wave?: number;
+  combo?: number;
+  destroyedCount?: number;
+  playerShield?: number;
   isGameOver?: boolean;
   onStatsUpdate?: (stats: { count: number; fps: number; activeShockwaves: number }) => void;
   onBrainClickTriggered?: (mode: ClickMode) => void;
@@ -52,6 +61,20 @@ interface NeuralSceneProps {
   } | null) => void;
   onDeflectionSuccess?: (points: number, screenX: number, screenY: number, isCoreStrike: boolean) => void;
   onPickupCollected?: (screenX: number, screenY: number) => void;
+  onAggressionChange?: (level: EnemyAggressionLevel) => void;
+  onThermalBurnTriggered?: (duration: number) => void;
+  onMissileWarningUpdate?: (
+    warning: {
+      missileId: number;
+      distance: number;
+      screenX: number;
+      screenY: number;
+      sourceShipName: string;
+      isHeavy: boolean;
+    } | null,
+    count: number
+  ) => void;
+  onMissileIntercepted?: (screenX: number, screenY: number, isHeavy: boolean) => void;
   triggerActionRef?: React.MutableRefObject<
     | ((
         action:
@@ -69,6 +92,11 @@ interface NeuralSceneProps {
           | 'restart_wave'
           | 'restart_mission'
           | 'breach_explosion'
+          | 'power_flame'
+          | 'power_emp'
+          | 'power_reflector'
+          | 'power_warp'
+          | 'power_torpedo'
       ) => void)
     | null
   >;
@@ -102,6 +130,9 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
   config,
   powerTier = 1,
   wave = 1,
+  combo = 0,
+  destroyedCount = 0,
+  playerShield = 100,
   isGameOver = false,
   onStatsUpdate,
   onBrainClickTriggered,
@@ -112,6 +143,10 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
   onCoreLockOnUpdate,
   onDeflectionSuccess,
   onPickupCollected,
+  onAggressionChange,
+  onThermalBurnTriggered,
+  onMissileWarningUpdate,
+  onMissileIntercepted,
   triggerActionRef,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -121,8 +156,15 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
   powerTierRef.current = powerTier;
   const waveRef = useRef<number>(wave);
   waveRef.current = wave;
+  const comboRef = useRef<number>(combo);
+  comboRef.current = combo;
+  const destroyedCountRef = useRef<number>(destroyedCount);
+  destroyedCountRef.current = destroyedCount;
+  const playerShieldRef = useRef<number>(playerShield);
+  playerShieldRef.current = playerShield;
   const isGameOverRef = useRef<boolean>(isGameOver);
   isGameOverRef.current = isGameOver;
+  const lastAggressionRef = useRef<EnemyAggressionLevel>('NORMAL');
 
   // Mutable animation state references
   const nodesRef = useRef<BrainNode[]>([]);
@@ -140,12 +182,16 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
   const laserBoltsRef = useRef<LaserBolt[]>([]);
   const enemyBoltsRef = useRef<EnemyBlasterBolt[]>([]);
   const protonTorpedoesRef = useRef<ProtonTorpedo[]>([]);
+  const enemyMissilesRef = useRef<EnemyMissile[]>([]);
+  const lastMissileWarningSoundRef = useRef<number>(0);
   const cameraShakeRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const combatSquadronRef = useRef<CombatShip[]>([]);
   const activeDebrisRef = useRef<ExplosionParticle[]>([]);
   const activePickupsRef = useRef<ActivePickup[]>([]);
   const activeLockShipIdRef = useRef<string | null>(null);
   const lastLockBeepSecondRef = useRef<number>(-1);
+  const empDisabledTimerRef = useRef<number>(0);
+  const reflectorActiveTimerRef = useRef<number>(0);
 
   useEffect(() => {
     const container = mountRef.current;
@@ -321,10 +367,10 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
     boltLines.frustumCulled = false;
     scene.add(boltLines);
 
-    // Enemy Imperial Blaster Bolts (Green & Red laser bolts shooting toward camera)
-    const maxEnemyBolts = 32;
-    const enemyBoltPositions = new Float32Array(maxEnemyBolts * 6);
-    const enemyBoltColors = new Float32Array(maxEnemyBolts * 6);
+    // Enemy Imperial Blaster Bolts (Vivid Star Wars emerald green & imperial scarlet bolts shooting toward core)
+    const maxEnemyBolts = 64;
+    const enemyBoltPositions = new Float32Array(maxEnemyBolts * 12);
+    const enemyBoltColors = new Float32Array(maxEnemyBolts * 12);
     const enemyBoltGeometry = new THREE.BufferGeometry();
     enemyBoltGeometry.setAttribute('position', new THREE.BufferAttribute(enemyBoltPositions, 3).setUsage(THREE.DynamicDrawUsage));
     enemyBoltGeometry.setAttribute('color', new THREE.BufferAttribute(enemyBoltColors, 3).setUsage(THREE.DynamicDrawUsage));
@@ -410,6 +456,45 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
     }
     pickupInstMesh.instanceMatrix.needsUpdate = true;
 
+    // Enemy Concussion Missile Line Segments & Rocket Exhaust Trails
+    const maxMissiles = 16;
+    const missilePositions = new Float32Array(maxMissiles * 24);
+    const missileColors = new Float32Array(maxMissiles * 24);
+    const missileGeometry = new THREE.BufferGeometry();
+    missileGeometry.setAttribute('position', new THREE.BufferAttribute(missilePositions, 3).setUsage(THREE.DynamicDrawUsage));
+    missileGeometry.setAttribute('color', new THREE.BufferAttribute(missileColors, 3).setUsage(THREE.DynamicDrawUsage));
+    const missileMaterial = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+    });
+    const missileLines = new THREE.LineSegments(missileGeometry, missileMaterial);
+    missileLines.frustumCulled = false;
+    scene.add(missileLines);
+
+    // Enemy Missile Physical Warhead 3D Mesh
+    const missileGeom = new THREE.ConeGeometry(0.18, 0.55, 6);
+    missileGeom.rotateX(Math.PI / 2);
+    const missileMat = new THREE.MeshBasicMaterial({
+      color: 0xff3d00,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+    });
+    const missileInstMesh = new THREE.InstancedMesh(missileGeom, missileMat, maxMissiles);
+    missileInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    missileInstMesh.frustumCulled = false;
+    scene.add(missileInstMesh);
+
+    for (let m = 0; m < maxMissiles; m++) {
+      _scale.set(0, 0, 0);
+      _mat4.compose(_pos, _quat, _scale);
+      missileInstMesh.setMatrixAt(m, _mat4);
+    }
+    missileInstMesh.instanceMatrix.needsUpdate = true;
+
     // Initial populate instances
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
@@ -489,6 +574,13 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       hyperspaceProgressRef.current = 1.0;
       bloomFlareRef.current = 2.8;
       neuralAudio.playHyperspace();
+      // Warp speed breaks tracking lock on all incoming missiles!
+      if (enemyMissilesRef.current.length > 0) {
+        enemyMissilesRef.current.forEach((m) => {
+          m.vel.multiplyScalar(0.4);
+          m.turnRate = 0; // Lost guidance lock
+        });
+      }
     };
 
     const triggerBlasterBoltAt = (targetPoint: THREE.Vector3) => {
@@ -703,10 +795,12 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       enemyBoltsRef.current = [];
       protonTorpedoesRef.current = [];
       laserBoltsRef.current = [];
+      enemyMissilesRef.current = [];
       activePickupsRef.current = [];
       activeLockShipIdRef.current = null;
       lastLockBeepSecondRef.current = -1;
       onCoreLockOnUpdate?.(null);
+      onMissileWarningUpdate?.(null, 0);
 
       // Re-spawn fresh squadron scaled for the target wave
       combatSquadronRef.current.forEach((ship) => {
@@ -747,6 +841,71 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       shockwavesRef.current.push(wave);
     };
 
+    const triggerThermalFlameCannons = () => {
+      neuralAudio.playFireBlaster();
+      bloomFlareRef.current = Math.min(3.4, bloomFlareRef.current + 1.2);
+      const camPos = camera.position;
+      const forward = camera.getWorldDirection(new THREE.Vector3());
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+
+      // Launch quad incendiary flame streams with blazing embers
+      const flameOffsets = [-0.95, -0.35, 0.35, 0.95];
+      flameOffsets.forEach((side, idx) => {
+        const origin = camPos.clone().add(forward.clone().multiplyScalar(0.8)).add(right.clone().multiplyScalar(side));
+        const dir = forward.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.08, 0)).normalize();
+        laserBoltsRef.current.push({
+          x: origin.x,
+          y: origin.y,
+          z: origin.z,
+          vx: dir.x * 72.0,
+          vy: dir.y * 72.0,
+          vz: dir.z * 72.0,
+          life: 1.4,
+          color: idx % 2 === 0 ? new THREE.Color('#ff3d00') : new THREE.Color('#ff9100'),
+        });
+      });
+
+      // Spawn burning flame burst ahead of cockpit
+      const flameAhead = camPos.clone().add(forward.multiplyScalar(2.2));
+      const fireSparks = createFireSparks(flameAhead, true);
+      activeDebrisRef.current.push(...fireSparks);
+    };
+
+    const triggerEmpDisruptor = () => {
+      neuralAudio.playEmpDisruptor();
+      bloomFlareRef.current = 3.6;
+      empDisabledTimerRef.current = 4.0; // Stuns enemy weapons for 4 full seconds!
+      // Flash all enemy starships with EMP ion disruption
+      combatSquadronRef.current.forEach((ship) => {
+        ship.shieldFlash = 2.8;
+      });
+      // Detonate all active enemy missiles in flight with EMP blast!
+      if (enemyMissilesRef.current.length > 0) {
+        enemyMissilesRef.current.forEach((m) => {
+          neuralAudio.playMissileInterception();
+          const debris = createExplosionDebris(m.pos);
+          const sparks = createFireSparks(m.pos, false);
+          activeDebrisRef.current.push(...debris, ...sparks);
+        });
+        enemyMissilesRef.current = [];
+        onMissileWarningUpdate?.(null, 0);
+      }
+      // Radial EMP shockwave
+      triggerShockwave({ x: 0, y: 0, z: 0 });
+    };
+
+    const triggerPlasmaReflector = () => {
+      neuralAudio.playPlasmaReflector();
+      bloomFlareRef.current = 3.4;
+      reflectorActiveTimerRef.current = 3.5; // Reflects enemy bolts for 3.5 seconds!
+      // Protective deflector shield flash
+      cameraShakeRef.current.set(
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.2
+      );
+    };
+
     // Expose trigger action to parent HUD
     if (triggerActionRef) {
       triggerActionRef.current = (action) => {
@@ -754,15 +913,18 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
         else if (action === 'scatter') triggerScatterToggle();
         else if (action === 'split') triggerSplitToggle();
         else if (action === 'pulse') triggerPulse();
-        else if (action === 'hyperspace') triggerHyperspace();
+        else if (action === 'hyperspace' || action === 'power_warp') triggerHyperspace();
         else if (action === 'blaster') triggerBlaster();
         else if (action === 'force') triggerForce();
         else if (action === 'saberclash') triggerSaberClash();
         else if (action === 'superlaser' || action === 'deathstar_superweapon') triggerDeathStarSuperweapon();
-        else if (action === 'hypertorpedo') triggerHyperProtonTorpedoes();
+        else if (action === 'hypertorpedo' || action === 'power_torpedo') triggerHyperProtonTorpedoes();
         else if (action === 'restart_wave') triggerResetWave(waveRef.current);
         else if (action === 'restart_mission') triggerResetWave(1);
         else if (action === 'breach_explosion') triggerBreachExplosion();
+        else if (action === 'power_flame') triggerThermalFlameCannons();
+        else if (action === 'power_emp') triggerEmpDisruptor();
+        else if (action === 'power_reflector') triggerPlasmaReflector();
       };
     }
 
@@ -901,6 +1063,41 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
           });
 
           return;
+        }
+
+        // Check if player clicked an incoming enemy missile to intercept and detonate it mid-air!
+        if (configRef.current.combatMode && enemyMissilesRef.current.length > 0) {
+          let closestMissileIdx = -1;
+          let closestMissileDist = 2.4;
+          for (let m = 0; m < enemyMissilesRef.current.length; m++) {
+            const missile = enemyMissilesRef.current[m];
+            const closest = new THREE.Vector3();
+            _raycaster.ray.closestPointToPoint(missile.pos, closest);
+            const d = closest.distanceTo(missile.pos);
+            if (d < closestMissileDist) {
+              closestMissileDist = d;
+              closestMissileIdx = m;
+            }
+          }
+
+          if (closestMissileIdx !== -1) {
+            const m = enemyMissilesRef.current[closestMissileIdx];
+            enemyMissilesRef.current.splice(closestMissileIdx, 1);
+            triggerBlasterBoltAt(m.pos);
+            neuralAudio.playMissileInterception();
+            const debris = createExplosionDebris(m.pos);
+            const fireSparks = createFireSparks(m.pos, true);
+            activeDebrisRef.current.push(...debris, ...fireSparks);
+
+            const proj = m.pos.clone().project(camera);
+            const screenW = renderer.domElement.clientWidth || window.innerWidth;
+            const screenH = renderer.domElement.clientHeight || window.innerHeight;
+            const sX = ((proj.x + 1) * 0.5) * screenW;
+            const sY = ((-proj.y + 1) * 0.5) * screenH;
+
+            onMissileIntercepted?.(sX, sY, m.isHeavy);
+            return;
+          }
         }
 
         // Check if player clicked an incoming enemy blaster bolt to deflect it mid-air!
@@ -1062,6 +1259,14 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       const delta = Math.min(clock.getDelta(), 0.1);
       const elapsedTime = clock.getElapsedTime();
 
+      // Decrement tactical power timers
+      if (empDisabledTimerRef.current > 0) {
+        empDisabledTimerRef.current = Math.max(0, empDisabledTimerRef.current - delta);
+      }
+      if (reflectorActiveTimerRef.current > 0) {
+        reflectorActiveTimerRef.current = Math.max(0, reflectorActiveTimerRef.current - delta);
+      }
+
       // FPS tracking
       frameCount++;
       if (now - lastFpsTime >= 500) {
@@ -1097,7 +1302,8 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
       else if (bw === 'alpha') waveFreq = 10;
       else if (bw === 'theta') waveFreq = 6;
 
-      const brainwavePulse = Math.sin(elapsedTime * (waveFreq * 0.4)) * 0.035;
+      const isBrainwavesOn = configRef.current.brainwavesEnabled !== false;
+      const brainwavePulse = isBrainwavesOn ? Math.sin(elapsedTime * (waveFreq * 0.4)) * 0.035 : 0;
 
       // Auto rotation
       if (configRef.current.autoRotate) {
@@ -1388,12 +1594,31 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
           // Subtle idle hover bobbing
           ship.group.position.y += Math.sin(elapsedTime * 4 + s) * 0.03;
 
+          // Dynamic Enemy Attack AI Power & Aggression Scaling
+          // If user destroys ships fast or maintains high combo, enemy AI escalates!
+          const curAggression = calculateEnemyAggression(comboRef.current, destroyedCountRef.current, waveRef.current);
+          if (curAggression !== lastAggressionRef.current) {
+            lastAggressionRef.current = curAggression;
+            onAggressionChange?.(curAggression);
+          }
+
+          const speedMult = curAggression === 'OVERCHARGED' ? 1.45 : curAggression === 'ELEVATED' ? 1.25 : 1.0;
+          const cooldownMult = curAggression === 'OVERCHARGED' ? 0.45 : curAggression === 'ELEVATED' ? 0.68 : 1.0;
+          const dynamicLockDuration = curAggression === 'OVERCHARGED' ? 1.5 : curAggression === 'ELEVATED' ? 2.1 : 2.8;
+          const dynamicProjSpeed = curAggression === 'OVERCHARGED' ? 1.45 : curAggression === 'ELEVATED' ? 1.22 : 1.0;
+          const coreDamageBonus = curAggression === 'OVERCHARGED' ? 8 : curAggression === 'ELEVATED' ? 4 : 0;
+          const maxSimultaneousLocks = curAggression === 'OVERCHARGED' ? 2 : 1;
+
           // Two-Sided Dogfight & Imperial Core Strike AI
           if (!isGameOverRef.current) {
-            ship.shootCooldown -= delta;
+            // If EMP pulse is active, enemy firing and weapons systems are completely stunned!
+            const isEmpActive = empDisabledTimerRef.current > 0;
+            if (!isEmpActive) {
+              ship.shootCooldown -= delta;
+            }
 
-            // Check if this ship is currently performing a 3-second Core Lock-On
-            if (ship.isLockingOnCore) {
+            // Check if this ship is currently performing a Core Lock-On
+            if (ship.isLockingOnCore && !isEmpActive) {
               ship.lockOnElapsed += delta;
               const timeLeft = Math.max(0, ship.lockOnDuration - ship.lockOnElapsed);
 
@@ -1404,7 +1629,7 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
               const sX = ((proj.x + 1) * 0.5) * screenW;
               const sY = ((-proj.y + 1) * 0.5) * screenH;
 
-              // Audible warning beeps at 3s, 2s, 1s thresholds
+              // Audible warning beeps at threshold seconds
               const curSec = Math.ceil(timeLeft);
               if (curSec !== lastLockBeepSecondRef.current && curSec >= 1 && curSec <= 3) {
                 lastLockBeepSecondRef.current = curSec;
@@ -1421,85 +1646,141 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
                 screenY: sY,
               });
 
-              // 3-second lock-on completed -> FIRE CHARGED RED PLASMA BOLT AT COCKPIT CORE!
+              // Lock-on completed -> FIRE CHARGED RED PLASMA / INCENDIARY FIRE BOLT AT COCKPIT CORE!
               if (ship.lockOnElapsed >= ship.lockOnDuration) {
                 ship.isLockingOnCore = false;
                 activeLockShipIdRef.current = null;
                 lastLockBeepSecondRef.current = -1;
                 onCoreLockOnUpdate?.(null);
 
-                neuralAudio.playCoreStrikeFired();
+                const isFireStormSector = waveRef.current >= 2 || ship.isElite || curAggression !== 'NORMAL';
+                const isHeavy = !!ship.isElite;
+                const isFireBall = isFireStormSector && (isHeavy || waveRef.current >= 3);
+
+                if (isFireStormSector) {
+                  neuralAudio.playFireBlaster();
+                } else {
+                  neuralAudio.playCoreStrikeFired();
+                }
 
                 // Direct trajectory toward the player's cockpit center
                 const camPos = camera.position;
                 const aimDir = new THREE.Vector3().subVectors(camPos, ship.position).normalize();
-                const speed = ship.projectileSpeed || 28.0;
-                const damage = ship.damageValue || 12; // 12% normal, 22% heavy
-                const isHeavy = !!ship.isElite;
-                const boltColor = isHeavy ? new THREE.Color('#ff0033') : new THREE.Color('#ff1e27');
+                const speed = (ship.projectileSpeed || 28.0) * dynamicProjSpeed * (isFireBall ? 1.15 : 1.0);
+                const damage = (ship.damageValue || 14) + coreDamageBonus + (isFireStormSector ? 5 : 0); // Enhanced fire damage
+                const boltColor = isFireBall
+                  ? new THREE.Color('#ff3d00')
+                  : isFireStormSector
+                  ? new THREE.Color('#ff6d00')
+                  : isHeavy
+                  ? new THREE.Color('#ff0033')
+                  : new THREE.Color('#ff1744');
 
                 enemyBoltsRef.current.push({
                   id: Date.now() + Math.random(),
                   pos: ship.position.clone(),
                   vel: aimDir.multiplyScalar(speed),
                   color: boltColor,
-                  life: 2.2,
-                  maxLife: 2.2,
+                  life: 2.4,
+                  maxLife: 2.4,
                   damage,
                   isCoreStrike: true,
                   isHeavy,
+                  isFireBolt: isFireStormSector,
+                  isFireBall,
                   sourceShipId: ship.id,
                   sourceShipName: ship.name,
                 });
 
-                ship.shootCooldown = (ship.attackCooldown || 3.5) + Math.random() * 2.0;
+                // In ELEVATED/OVERCHARGED, spawn a secondary flanking fire bolt!
+                if (curAggression !== 'NORMAL') {
+                  const perp = new THREE.Vector3().crossVectors(aimDir, new THREE.Vector3(0, 1, 0)).normalize();
+                  [-0.35, 0.35].forEach((offset) => {
+                    const spawnOffset = ship.position.clone().add(perp.clone().multiplyScalar(offset));
+                    const subDir = new THREE.Vector3().subVectors(camPos, spawnOffset).normalize();
+                    enemyBoltsRef.current.push({
+                      id: Date.now() + Math.random(),
+                      pos: spawnOffset,
+                      vel: subDir.multiplyScalar(speed * 0.95),
+                      color: isFireStormSector ? new THREE.Color('#ff9100') : new THREE.Color('#ff5252'),
+                      life: 2.2,
+                      maxLife: 2.2,
+                      damage: Math.round(damage * 0.6),
+                      isCoreStrike: true,
+                      isHeavy: false,
+                      isFireBolt: isFireStormSector,
+                      sourceShipId: ship.id,
+                      sourceShipName: `${ship.name} (Flank Fire)`,
+                    });
+                  });
+                }
+
+                ship.shootCooldown = ((ship.attackCooldown || 3.0) * cooldownMult) + Math.random() * 1.5;
               }
-            } else if (ship.shootCooldown <= 0) {
+            } else if (ship.shootCooldown <= 0 && !isEmpActive) {
               const camPos = camera.position;
               const distToCam = ship.position.distanceTo(camPos);
-              if (distToCam < 16.0) {
-                // If no enemy is currently locking on the Core Reactor, initiate a 3-second lock!
-                // Fair, skill-based mechanic: one enemy locks at a time with 3-second clear warning.
+              if (distToCam < 18.0) {
+                // If core lock-on capacity is available, initiate target lock with dynamic duration!
                 if (!activeLockShipIdRef.current) {
                   ship.isLockingOnCore = true;
                   ship.lockOnElapsed = 0;
-                  ship.lockOnDuration = 3.0;
+                  ship.lockOnDuration = dynamicLockDuration;
                   activeLockShipIdRef.current = ship.id;
-                  lastLockBeepSecondRef.current = 3;
+                  lastLockBeepSecondRef.current = Math.ceil(dynamicLockDuration);
                   neuralAudio.playLockOnBeep(3);
                 } else {
-                  // Other enemies fire light standard defensive potshots at player deflector shields
-                  neuralAudio.playEnemyBlasterFire();
+                  // Other enemies fire incendiary fire bolts or plasma potshots
+                  const isFireStormSector = waveRef.current >= 2 || ship.isElite || curAggression !== 'NORMAL';
+                  const isFireBall = isFireStormSector && (ship.isElite || waveRef.current >= 3) && Math.random() < 0.35;
+
+                  if (isFireStormSector) {
+                    neuralAudio.playFireBlaster();
+                  } else {
+                    neuralAudio.playEnemyBlasterFire();
+                  }
+
                   const isTie = ship.type.startsWith('tie');
-                  const boltColor = isTie ? new THREE.Color('#22c55e') : new THREE.Color('#38bdf8');
+                  const boltColor = isFireBall
+                    ? new THREE.Color('#ff3d00')
+                    : isFireStormSector
+                    ? new THREE.Color('#ff7b00')
+                    : isTie
+                    ? new THREE.Color('#00e676')
+                    : new THREE.Color('#38bdf8');
 
                   const dir = new THREE.Vector3().subVectors(camPos, ship.position).normalize();
                   const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+                  const areShieldsDown = (playerShieldRef.current ?? 100) <= 0;
 
-                  [-0.26, 0.26].forEach((offset) => {
+                  [-0.28, 0.28].forEach((offset) => {
                     const spawnPos = ship.position.clone().add(right.clone().multiplyScalar(offset));
                     const aimDir = new THREE.Vector3()
                       .subVectors(camPos, spawnPos)
-                      .add(new THREE.Vector3((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, 0))
+                      .add(new THREE.Vector3((Math.random() - 0.5) * 0.22, (Math.random() - 0.5) * 0.22, 0))
                       .normalize();
-                    const speed = 24.0;
+                    const speed = (26.0 + Math.random() * 4.0) * dynamicProjSpeed * (isFireBall ? 1.1 : 1.0);
 
                     enemyBoltsRef.current.push({
                       id: Date.now() + Math.random(),
                       pos: spawnPos,
                       vel: aimDir.multiplyScalar(speed),
-                      color: boltColor,
-                      life: 1.8,
-                      maxLife: 1.8,
-                      damage: 8,
-                      isCoreStrike: false,
+                      color: areShieldsDown ? new THREE.Color('#ff3d00') : boltColor,
+                      life: 2.0,
+                      maxLife: 2.0,
+                      damage: areShieldsDown ? 11 : isFireStormSector ? 10 : 8,
+                      isCoreStrike: areShieldsDown, // Breaches core directly if shields are 0%!
+                      isFireBolt: isFireStormSector,
+                      isFireBall,
+                      sourceShipId: ship.id,
+                      sourceShipName: ship.name,
                     });
                   });
 
-                  ship.shootCooldown = 3.5 + Math.random() * 2.5;
+                  ship.shootCooldown = (2.2 * cooldownMult) + Math.random() * 1.8;
                 }
               } else {
-                ship.shootCooldown = 1.0;
+                ship.shootCooldown = 0.8;
               }
             }
           } else {
@@ -1603,14 +1884,73 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
 
         // Check if incoming bolt strikes player deflector shields or cockpit Core Reactor
         const distToCam = ebolt.pos.distanceTo(camera.position);
-        if (distToCam < 0.95) {
+
+        // Check active Plasma Mirror Deflector power (reflects enemy bolts back at enemies!)
+        if (reflectorActiveTimerRef.current > 0 && ebolt.sourceShipId !== 'player' && distToCam < 2.5) {
+          ebolt.vel.multiplyScalar(-1.5);
+          ebolt.color = new THREE.Color('#00f0ff');
+          ebolt.sourceShipId = 'player';
+          ebolt.isCoreStrike = false;
+          ebolt.life = 2.4;
+          neuralAudio.playPlasmaReflector();
+          const proj = ebolt.pos.clone().project(camera);
+          const screenW = renderer.domElement.clientWidth || window.innerWidth;
+          const screenH = renderer.domElement.clientHeight || window.innerHeight;
+          onDeflectionSuccess?.(75, ((proj.x + 1) * 0.5) * screenW, ((-proj.y + 1) * 0.5) * screenH, true);
+          continue;
+        }
+
+        // Check if reflected bolt strikes an enemy starship
+        if (ebolt.sourceShipId === 'player') {
+          let hitEnemy = false;
+          for (let s = 0; s < combatSquadronRef.current.length; s++) {
+            const enemy = combatSquadronRef.current[s];
+            if (!enemy.isDead && enemy.group.visible) {
+              if (ebolt.pos.distanceTo(enemy.position) < enemy.boundingRadius * 1.5) {
+                enemy.isDead = true;
+                enemy.group.visible = false;
+                enemy.respawnTimer = 4.0;
+                const debris = createExplosionDebris(enemy.position);
+                activeDebrisRef.current.push(...debris);
+                const proj = enemy.position.clone().project(camera);
+                const screenW = renderer.domElement.clientWidth || window.innerWidth;
+                const screenH = renderer.domElement.clientHeight || window.innerHeight;
+                onShipDestroyed?.({
+                  points: 125,
+                  screenX: ((proj.x + 1) * 0.5) * screenW,
+                  screenY: ((-proj.y + 1) * 0.5) * screenH,
+                  shipName: `${enemy.name} [DEFLECTOR]`,
+                  isKill: true,
+                  isElite: enemy.isElite,
+                });
+                hitEnemy = true;
+                break;
+              }
+            }
+          }
+          if (hitEnemy) {
+            ebolt.life = 0;
+            continue;
+          }
+        }
+
+        if (distToCam < 1.15) {
           const proj = ebolt.pos.clone().project(camera);
           const screenW = renderer.domElement.clientWidth || window.innerWidth;
           const screenH = renderer.domElement.clientHeight || window.innerHeight;
           const sX = ((proj.x + 1) * 0.5) * screenW;
           const sY = ((-proj.y + 1) * 0.5) * screenH;
+          const areShieldsDown = (playerShieldRef.current ?? 100) <= 0;
 
-          if (ebolt.isCoreStrike) {
+          // Check Incendiary Fire & Thermal Burn impact
+          if (ebolt.isFireBolt || ebolt.isFireBall) {
+            neuralAudio.playThermalBurnImpact();
+            const flameSparks = createFireSparks(ebolt.pos, !!ebolt.isFireBall);
+            activeDebrisRef.current.push(...flameSparks);
+            onThermalBurnTriggered?.(4.0);
+          }
+
+          if (ebolt.isCoreStrike || areShieldsDown) {
             // DIRECT COCKPIT CORE REACTOR IMPACT!
             if (!isGameOverRef.current) {
               onCoreDamage?.(
@@ -1621,13 +1961,17 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
                 ebolt.sourceShipName || 'Imperial Core Strike'
               );
               neuralAudio.playCoreDamage(ebolt.isHeavy);
-              bloomFlareRef.current = Math.min(3.8, bloomFlareRef.current + 2.5);
+              bloomFlareRef.current = Math.min(4.5, bloomFlareRef.current + 3.2);
 
-              // Violent cockpit camera shake
+              // Spawn intense electrical/plasma sparks right at core impact coordinate
+              const sparks = createCoreHitSparks(ebolt.pos, !!ebolt.isHeavy);
+              activeDebrisRef.current.push(...sparks);
+
+              // Violent cockpit camera shake recoil
               cameraShakeRef.current.set(
-                (Math.random() - 0.5) * 0.85,
-                (Math.random() - 0.5) * 0.85,
-                (Math.random() - 0.5) * 0.45
+                (Math.random() - 0.5) * (ebolt.isHeavy ? 1.6 : 1.1),
+                (Math.random() - 0.5) * (ebolt.isHeavy ? 1.6 : 1.1),
+                (Math.random() - 0.5) * 0.75
               );
             }
           } else {
@@ -1637,9 +1981,9 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
 
             // Moderate shield ripple camera shake
             cameraShakeRef.current.set(
-              (Math.random() - 0.5) * 0.35,
-              (Math.random() - 0.5) * 0.35,
-              (Math.random() - 0.5) * 0.15
+              (Math.random() - 0.5) * 0.45,
+              (Math.random() - 0.5) * 0.45,
+              (Math.random() - 0.5) * 0.25
             );
           }
 
@@ -1647,7 +1991,8 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
           continue;
         }
 
-        const streakLen = ebolt.isCoreStrike ? 0.065 : 0.045;
+        // Segment 1: Elongated, high-visibility Star Wars blaster bolt streak
+        const streakLen = ebolt.isCoreStrike ? 0.12 : 0.075;
         enemyBoltPositions[eBoltVertexIdx] = ebolt.pos.x;
         enemyBoltPositions[eBoltVertexIdx + 1] = ebolt.pos.y;
         enemyBoltPositions[eBoltVertexIdx + 2] = ebolt.pos.z;
@@ -1656,16 +2001,38 @@ export const NeuralScene: React.FC<NeuralSceneProps> = ({
         enemyBoltPositions[eBoltVertexIdx + 4] = ebolt.pos.y - ebolt.vel.y * streakLen;
         enemyBoltPositions[eBoltVertexIdx + 5] = ebolt.pos.z - ebolt.vel.z * streakLen;
 
-        const emission = (ebolt.life / ebolt.maxLife) * (ebolt.isCoreStrike ? 6.2 : 4.8);
+        const emission = (ebolt.life / ebolt.maxLife) * (ebolt.isCoreStrike ? 8.2 : 5.8);
         enemyBoltColors[eBoltVertexIdx] = ebolt.color.r * emission;
         enemyBoltColors[eBoltVertexIdx + 1] = ebolt.color.g * emission;
         enemyBoltColors[eBoltVertexIdx + 2] = ebolt.color.b * emission;
 
-        enemyBoltColors[eBoltVertexIdx + 3] = ebolt.color.r * emission;
-        enemyBoltColors[eBoltVertexIdx + 4] = ebolt.color.g * emission;
-        enemyBoltColors[eBoltVertexIdx + 5] = ebolt.color.b * emission;
+        enemyBoltColors[eBoltVertexIdx + 3] = ebolt.color.r * emission * 0.6;
+        enemyBoltColors[eBoltVertexIdx + 4] = ebolt.color.g * emission * 0.6;
+        enemyBoltColors[eBoltVertexIdx + 5] = ebolt.color.b * emission * 0.6;
 
-        eBoltVertexIdx += 6;
+        // Segment 2: Cross-tracer head for volumetric diamond glow
+        const vlen = Math.hypot(ebolt.vel.x, ebolt.vel.y, ebolt.vel.z) || 1;
+        const px = (-ebolt.vel.y / vlen) * 0.085;
+        const py = (ebolt.vel.x / vlen) * 0.085;
+
+        enemyBoltPositions[eBoltVertexIdx + 6] = ebolt.pos.x - px;
+        enemyBoltPositions[eBoltVertexIdx + 7] = ebolt.pos.y - py;
+        enemyBoltPositions[eBoltVertexIdx + 8] = ebolt.pos.z;
+
+        enemyBoltPositions[eBoltVertexIdx + 9] = ebolt.pos.x + px;
+        enemyBoltPositions[eBoltVertexIdx + 10] = ebolt.pos.y + py;
+        enemyBoltPositions[eBoltVertexIdx + 11] = ebolt.pos.z;
+
+        // Diamond white/bright core at projectile head
+        enemyBoltColors[eBoltVertexIdx + 6] = 2.5 * emission;
+        enemyBoltColors[eBoltVertexIdx + 7] = 2.5 * emission;
+        enemyBoltColors[eBoltVertexIdx + 8] = 2.5 * emission;
+
+        enemyBoltColors[eBoltVertexIdx + 9] = ebolt.color.r * emission;
+        enemyBoltColors[eBoltVertexIdx + 10] = ebolt.color.g * emission;
+        enemyBoltColors[eBoltVertexIdx + 11] = ebolt.color.b * emission;
+
+        eBoltVertexIdx += 12;
       }
       enemyBoltGeometry.attributes.position.needsUpdate = true;
       enemyBoltGeometry.attributes.color.needsUpdate = true;

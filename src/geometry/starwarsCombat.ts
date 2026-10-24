@@ -25,6 +25,7 @@ export interface CombatShip {
   respawnTimer: number;
   // Imperial Core Strike & Two-Sided Combat Properties
   shootCooldown: number;
+  missileCooldown: number;
   isTargetingPlayer: boolean;
   targetLockTimer: number;
   isLockingOnCore: boolean;
@@ -37,6 +38,23 @@ export interface CombatShip {
   targetingBehavior: 'swoop_lock' | 'strafe_snipe' | 'heavy_barrage' | 'sensor_probe';
 }
 
+export interface EnemyMissile {
+  id: number;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  speed: number;
+  turnRate: number;
+  life: number;
+  maxLife: number;
+  damage: number;
+  isHeavy: boolean;
+  sourceShipId: string;
+  sourceShipName: string;
+  color: THREE.Color;
+  trail: THREE.Vector3[];
+  boundingRadius: number;
+}
+
 export interface EnemyBlasterBolt {
   id: number;
   pos: THREE.Vector3;
@@ -47,6 +65,8 @@ export interface EnemyBlasterBolt {
   damage: number;
   isCoreStrike?: boolean;
   isHeavy?: boolean;
+  isFireBolt?: boolean;      // Incendiary fire blaster bolt with flame trail
+  isFireBall?: boolean;      // Heavy thermal fireball missile
   sourceShipId?: string;
   sourceShipName?: string;
 }
@@ -60,6 +80,36 @@ export interface ProtonTorpedo {
   speed: number;
   life: number;
   trail: THREE.Vector3[];
+}
+
+/**
+ * Spawns an incoming physical homing missile launched by an enemy starfighter
+ */
+export function createEnemyMissile(
+  origin: THREE.Vector3,
+  targetPos: THREE.Vector3,
+  shipId: string,
+  shipName: string,
+  isHeavy: boolean = false
+): EnemyMissile {
+  const dir = new THREE.Vector3().subVectors(targetPos, origin).normalize();
+  const speed = isHeavy ? 6.5 : 8.2;
+  return {
+    id: Date.now() + Math.random(),
+    pos: origin.clone(),
+    vel: dir.clone().multiplyScalar(speed),
+    speed,
+    turnRate: isHeavy ? 1.8 : 2.5,
+    life: 7.0,
+    maxLife: 7.0,
+    damage: isHeavy ? 36 : 24,
+    isHeavy,
+    sourceShipId: shipId,
+    sourceShipName: shipName,
+    color: isHeavy ? new THREE.Color('#ff0055') : new THREE.Color('#ff5500'),
+    trail: [origin.clone()],
+    boundingRadius: 0.95,
+  };
 }
 
 export interface ExplosionParticle {
@@ -357,43 +407,49 @@ export function createEnemySquadron(count: number = 4, wave: number = 1): Combat
 
     const flightModes: ('orbit' | 'swoop' | 'strafe' | 'figure8')[] = ['orbit', 'swoop', 'figure8', 'strafe'];
 
+    // Progressive Wave Difficulty Scaling:
+    // Game gets noticeably harder with each successive sector (faster speeds, higher projectile velocity, thermal fire attacks!)
+    const progressivePace = Math.max(0.32, 1.0 - (wave - 1) * 0.14);
+    const progressiveSpeedMult = 1.0 + (wave - 1) * 0.22;
+    const progressiveProjSpeedMult = 1.0 + (wave - 1) * 0.16;
+
     // Distinct attack AI per enemy type
-    let attackCooldown = 3.5;
-    let projectileSpeed = 25.0;
-    let damageValue = 12; // Normal core damage: 12%
+    let attackCooldown = 3.2 * progressivePace;
+    let projectileSpeed = 26.0 * progressiveProjSpeedMult;
+    let damageValue = 14 + (wave - 1) * 2; // Harder core damage on higher waves
     let isElite = false;
     let targetingBehavior: 'swoop_lock' | 'strafe_snipe' | 'heavy_barrage' | 'sensor_probe' = 'swoop_lock';
-    let baseSpeed = 2.0;
+    let baseSpeed = 2.0 * progressiveSpeedMult;
 
     if (type === 'tie_interceptor') {
       // Fast, agile interceptor
-      attackCooldown = (2.6 + Math.random() * 1.4) * wavePaceFactor;
-      projectileSpeed = 30.0;
-      damageValue = 12;
+      attackCooldown = (2.2 + Math.random() * 1.2) * progressivePace;
+      projectileSpeed = 32.0 * progressiveProjSpeedMult;
+      damageValue = 14 + (wave - 1) * 2;
       targetingBehavior = 'strafe_snipe';
-      baseSpeed = 2.4 + Math.random() * 0.8;
+      baseSpeed = (2.5 + Math.random() * 0.8) * progressiveSpeedMult;
     } else if (type === 'tie_fighter') {
-      // Standard imperial fighter
-      attackCooldown = (3.6 + Math.random() * 1.8) * wavePaceFactor;
-      projectileSpeed = 24.0;
-      damageValue = 12;
+      // Standard imperial fighter with thermal fire cannons
+      attackCooldown = (3.0 + Math.random() * 1.5) * progressivePace;
+      projectileSpeed = 26.0 * progressiveProjSpeedMult;
+      damageValue = 14 + (wave - 1) * 2;
       targetingBehavior = 'swoop_lock';
-      baseSpeed = 1.9 + Math.random() * 0.6;
+      baseSpeed = (2.0 + Math.random() * 0.6) * progressiveSpeedMult;
     } else if (type === 'tie_advanced') {
-      // Heavy elite fighter (Vader style) - 22% heavy core damage!
-      attackCooldown = (4.8 + Math.random() * 1.8) * wavePaceFactor;
-      projectileSpeed = 32.0;
-      damageValue = 22; // Heavy attack: 22%
+      // Heavy elite fighter (Vader style) - Devastating heavy thermal fireball attacks!
+      attackCooldown = (3.8 + Math.random() * 1.4) * progressivePace;
+      projectileSpeed = 34.0 * progressiveProjSpeedMult;
+      damageValue = 24 + (wave - 1) * 3; // Extreme damage on higher waves
       isElite = true;
       targetingBehavior = 'heavy_barrage';
-      baseSpeed = 2.1 + Math.random() * 0.5;
+      baseSpeed = (2.3 + Math.random() * 0.6) * progressiveSpeedMult;
     } else if (type === 'probe_droid') {
       // Reconnaissance scout
-      attackCooldown = (3.2 + Math.random() * 1.5) * wavePaceFactor;
-      projectileSpeed = 28.0;
-      damageValue = 12;
+      attackCooldown = (2.6 + Math.random() * 1.2) * progressivePace;
+      projectileSpeed = 30.0 * progressiveProjSpeedMult;
+      damageValue = 12 + (wave - 1) * 2;
       targetingBehavior = 'sensor_probe';
-      baseSpeed = 1.5 + Math.random() * 0.5;
+      baseSpeed = (1.6 + Math.random() * 0.5) * progressiveSpeedMult;
     }
 
     // Stagger initial firing cooldown so player isn't overwhelmed immediately
@@ -422,6 +478,7 @@ export function createEnemySquadron(count: number = 4, wave: number = 1): Combat
       deathTimer: 0,
       respawnTimer: 0,
       shootCooldown: initialCooldown,
+      missileCooldown: 4.5 + i * 2.2 + Math.random() * 3.5,
       isTargetingPlayer: false,
       targetLockTimer: 0,
       isLockingOnCore: false,
@@ -539,3 +596,97 @@ export function createReactorPickup(position: THREE.Vector3): ActivePickup {
     maxLife: 12.0,
   };
 }
+
+export type EnemyAggressionLevel = 'NORMAL' | 'ELEVATED' | 'OVERCHARGED';
+
+/**
+ * Dynamically computes Enemy Attack AI power based on player pace, combo, and wave.
+ * If user destroys ships fast or maintains high combos, enemy AI upgrades to ELEVATED or OVERCHARGED!
+ */
+export function calculateEnemyAggression(combo: number, destroyedCount: number, wave: number): EnemyAggressionLevel {
+  if (combo >= 6 || (destroyedCount >= 14 && wave >= 2) || wave >= 4) {
+    return 'OVERCHARGED';
+  }
+  if (combo >= 3 || destroyedCount >= 5 || wave >= 2) {
+    return 'ELEVATED';
+  }
+  return 'NORMAL';
+}
+
+/**
+ * Spawns high-energy plasma sparks and electrical arc particles when an enemy bullet hits the player core!
+ */
+export function createCoreHitSparks(position: THREE.Vector3, isHeavy: boolean): ExplosionParticle[] {
+  const particles: ExplosionParticle[] = [];
+  const count = isHeavy ? 28 : 18;
+  const colors = isHeavy
+    ? [new THREE.Color('#ff0033'), new THREE.Color('#ff5500'), new THREE.Color('#ffffff'), new THREE.Color('#ffd166')]
+    : [new THREE.Color('#ff3838'), new THREE.Color('#ff9900'), new THREE.Color('#38bdf8'), new THREE.Color('#ffffff')];
+
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI;
+    const speed = (isHeavy ? 6.5 : 4.2) + Math.random() * 5.0;
+
+    const vel = new THREE.Vector3(
+      Math.sin(phi) * Math.cos(theta) * speed,
+      Math.sin(phi) * Math.sin(theta) * speed,
+      Math.cos(phi) * speed
+    );
+
+    particles.push({
+      pos: position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3)),
+      vel,
+      rot: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, 0),
+      rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, 0),
+      scale: isHeavy ? 0.22 + Math.random() * 0.2 : 0.14 + Math.random() * 0.15,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      life: 1.0,
+      maxLife: 0.6 + Math.random() * 0.5,
+    });
+  }
+
+  return particles;
+}
+
+/**
+ * Spawns intense burning fire sparks, ember particles, and flame bursts
+ */
+export function createFireSparks(position: THREE.Vector3, isLarge: boolean = false): ExplosionParticle[] {
+  const particles: ExplosionParticle[] = [];
+  const count = isLarge ? 32 : 18;
+  const flameColors = [
+    new THREE.Color('#ff3d00'), // Blazing red-orange
+    new THREE.Color('#ff6d00'), // Fiery orange
+    new THREE.Color('#ff9100'), // Amber flame
+    new THREE.Color('#ffd600'), // Yellow-white flame core
+    new THREE.Color('#ffffff'), // Incandescent white
+  ];
+
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI;
+    const speed = (isLarge ? 5.8 : 3.6) + Math.random() * 4.5;
+
+    const vel = new THREE.Vector3(
+      Math.sin(phi) * Math.cos(theta) * speed,
+      Math.sin(phi) * Math.sin(theta) * speed + 1.2, // Thermal buoyancy rise
+      Math.cos(phi) * speed
+    );
+
+    particles.push({
+      pos: position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4)),
+      vel,
+      rot: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, 0),
+      rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 22, (Math.random() - 0.5) * 22, 0),
+      scale: isLarge ? 0.24 + Math.random() * 0.24 : 0.16 + Math.random() * 0.16,
+      color: flameColors[Math.floor(Math.random() * flameColors.length)],
+      life: 1.0,
+      maxLife: 0.55 + Math.random() * 0.45,
+    });
+  }
+
+  return particles;
+}
+
+

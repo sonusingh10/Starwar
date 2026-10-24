@@ -72,12 +72,17 @@ export interface SimulationConfig {
   hologramScanlines: boolean;
   hyperspaceWarp: boolean;
   hologramProjector: boolean;
-  starwarsTour: boolean;
+  starwarsTour: boolean;         // Space Tour: auto-cruise through 3D spacecraft forms
+  pilotName: string;             // Custom Pilot/Commander name for Space Tour and dogfight
+  activePlayerPower: PlayerPowerType; // Currently equipped tactical power
   sFoilsOpen: boolean;
   combatMode: boolean;           // Star Wars Dogfight / Enemy Ship Target Mode
   enemySquadronSize: number;     // Number of active enemy ships (e.g. 3-6)
   autoAimBlaster: boolean;       // Auto-aim blaster fire at nearest enemy on click
+  brainwavesEnabled: boolean;    // Toggle dynamic neural brainwave oscillations on/off
 }
+
+export type PlayerPowerType = 'flame' | 'emp' | 'reflector' | 'warp' | 'torpedo' | 'superlaser';
 
 export type EnemyShipType = 'tie_interceptor' | 'tie_fighter' | 'probe_droid' | 'tie_advanced';
 
@@ -90,6 +95,20 @@ export interface CombatStats {
   accuracy: number;
   shotsFired: number;
   shotsHit: number;
+  // Pilot Identity & Space Tour Telemetry
+  pilotName: string;             // User-written Pilot/Commander Name
+  // Extended Mission Chronometer & Escalating Progressive Difficulty
+  missionTimeRemaining: number;  // Extended mission time countdown in seconds (e.g. 120s)
+  missionTotalTime: number;      // Total mission duration (120s)
+  difficultyLevel: number;       // Escalating difficulty tier (Wave 1: Scout, Wave 2: Firestorm, Wave 3: Incendiary, etc.)
+  // Power Arsenal (Different Powers unlocked as game gets harder)
+  activePlayerPower: PlayerPowerType;
+  powersUnlocked: PlayerPowerType[];
+  // Incendiary Fire & Thermal Burn System
+  thermalBurnActive?: boolean;   // True when cockpit is under active incendiary burn from enemy fire
+  thermalBurnRemaining?: number; // Burn duration in seconds
+  empDisabledTimer?: number;     // Seconds remaining where enemy weapons are stunned by EMP
+  reflectorActive?: boolean;     // Active mirror deflector reflecting enemy fire bolts
   // Two-Sided Dogfight & Power System
   playerShield: number;          // 0 to 100%
   blasterPower: number;          // 0 to 100% power gauge to hit back
@@ -100,11 +119,18 @@ export interface CombatStats {
   isVictorious: boolean;         // Trigger victory celebration when wave cleared
   totalWins: number;             // Total sectors won
   incomingThreatWarning: boolean;// Active when enemy is locked onto cockpit
-  // Imperial Core Strike System
+  // Imperial Core Strike System & Enemy Attack AI Power
   coreEnergy: number;            // 0 to 100% Core Reactor health
   isGameOver: boolean;           // True when core is breached and game over triggered
   eliteKills: number;            // Count of elite TIE Advanced destroyed (+8% core restore)
   deflections: number;           // Count of incoming plasma deflections (+3% core restore)
+  enemyAggressionLevel?: 'NORMAL' | 'ELEVATED' | 'OVERCHARGED'; // Dynamic difficulty scaling
+  lastCoreHitDetails?: {
+    damage: number;
+    isHeavy: boolean;
+    shipName: string;
+    time: number;
+  } | null;
   // Proton Torpedo Ordnance Balance (No unlimited spam / prevents automatic win)
   torpedoAmmo: number;           // Current torpedoes (e.g. 2 per wave)
   maxTorpedoAmmo: number;        // Max capacity (default: 2)
@@ -114,6 +140,16 @@ export interface CombatStats {
   deathStarCharged: boolean;     // Whether Death Star superlaser capacitor is ready
   deathStarCharging: boolean;    // True while superlaser is firing
   deathStarStrikesUsed: number;  // Total superweapon strikes executed
+  // Enemy Missile Homing & Interception System
+  incomingMissileCount?: number;
+  activeMissileWarning?: {
+    missileId: number;
+    distance: number;
+    screenX: number;
+    screenY: number;
+    sourceShipName: string;
+    isHeavy: boolean;
+  } | null;
   activeLockOn?: {
     shipId: string;
     shipName: string;

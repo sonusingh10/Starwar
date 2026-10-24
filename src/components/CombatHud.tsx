@@ -16,8 +16,14 @@ import {
   Sliders,
   Maximize2,
   Minimize2,
+  Rocket,
+  Swords,
+  Sparkles,
+  Clock,
+  User,
+  Edit2,
 } from 'lucide-react';
-import { CombatStats, FloatingPointNotice, ShieldImpactNotice } from '../types';
+import { CombatStats, FloatingPointNotice, PlayerPowerType, ShieldImpactNotice } from '../types';
 
 interface CombatHudProps {
   combatStats: CombatStats;
@@ -27,6 +33,12 @@ interface CombatHudProps {
   lockedShipName: string | null;
   combatMode: boolean;
   autoAimBlaster: boolean;
+  brainwavesEnabled?: boolean;
+  onToggleBrainwaves?: () => void;
+  onInstantFire?: (weapon: 'warp' | 'saber' | 'superlaser' | 'scatter') => void;
+  onTriggerPower?: (power: PlayerPowerType) => void;
+  onSelectPower?: (power: PlayerPowerType) => void;
+  onEditPilotName?: () => void;
   onToggleCombatMode: () => void;
   onToggleAutoAim: () => void;
   onResetScore: () => void;
@@ -46,6 +58,12 @@ export const CombatHud: React.FC<CombatHudProps> = ({
   lockedShipName,
   combatMode,
   autoAimBlaster,
+  brainwavesEnabled = true,
+  onToggleBrainwaves,
+  onInstantFire,
+  onTriggerPower,
+  onSelectPower,
+  onEditPilotName,
   onToggleCombatMode,
   onToggleAutoAim,
   onResetScore,
@@ -247,6 +265,95 @@ export const CombatHud: React.FC<CombatHudProps> = ({
         width: '250px',
       };
 
+  const formatMissionTime = (seconds?: number) => {
+    const sec = typeof seconds === 'number' ? seconds : 120;
+    const m = Math.floor(Math.max(0, sec) / 60);
+    const s = Math.floor(Math.max(0, sec) % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const getDifficultyTier = (wave: number) => {
+    if (wave === 1) return { label: 'SCOUT PATROL', badge: 'SCOUT', color: 'text-sky-400', desc: 'Standard Enemy AI Reconnaissance' };
+    if (wave === 2) return { label: 'FIRESTORM INVASION', badge: 'FIRESTORM', color: 'text-amber-400', desc: '🔥 Thermal Fire Blasters Active' };
+    if (wave === 3) return { label: 'INCENDIARY INFERNO', badge: 'INFERNO', color: 'text-orange-400', desc: '🔥 Heavy Thermal Fireballs & Elites' };
+    return { label: `OVERCHARGED ARMAGEDDON`, badge: 'ARMAGEDDON', color: 'text-red-400', desc: '🔥 Apocalyptic Barrages & Rapid Strikes' };
+  };
+
+  const diffTier = getDifficultyTier(combatStats.wave || 1);
+  const unlockedPowers = combatStats.powersUnlocked || ['flame', 'warp', 'torpedo'];
+
+  const POWER_DEFINITIONS: {
+    id: PlayerPowerType;
+    name: string;
+    short: string;
+    icon: string;
+    hotkey: string;
+    desc: string;
+    color: string;
+    unlockWave: number;
+  }[] = [
+    {
+      id: 'flame',
+      name: 'Thermal Flame Cannons',
+      short: 'FLAME',
+      icon: '🔥',
+      hotkey: '1',
+      desc: 'Quad incendiary blazing fire streams',
+      color: '#ff6d00',
+      unlockWave: 1,
+    },
+    {
+      id: 'emp',
+      name: 'Ion EMP Pulse',
+      short: 'EMP FREEZE',
+      icon: '⚡',
+      hotkey: '2',
+      desc: 'Stuns and freezes enemy weapons for 4s',
+      color: '#00f0ff',
+      unlockWave: 2,
+    },
+    {
+      id: 'reflector',
+      name: 'Plasma Mirror Deflector',
+      short: 'DEFLECTOR',
+      icon: '🛡️',
+      hotkey: '3',
+      desc: 'Reflects enemy fire bolts back at hostiles',
+      color: '#38bdf8',
+      unlockWave: 3,
+    },
+    {
+      id: 'warp',
+      name: 'Warp Tactical Dash',
+      short: 'WARP DASH',
+      icon: '🚀',
+      hotkey: '4',
+      desc: 'Instant hyperspace lightspeed escape',
+      color: '#60a5fa',
+      unlockWave: 1,
+    },
+    {
+      id: 'torpedo',
+      name: 'Proton Torpedoes',
+      short: 'TORPEDO',
+      icon: '💥',
+      hotkey: '5',
+      desc: 'Dual homing torpedo volley',
+      color: '#d2f27c',
+      unlockWave: 1,
+    },
+    {
+      id: 'superlaser',
+      name: 'Death Star Superlaser',
+      short: 'SUPERLASER',
+      icon: '🟢',
+      hotkey: '6',
+      desc: 'Orbital emerald axial obliteration beam',
+      color: '#10b981',
+      unlockWave: 4,
+    },
+  ];
+
   return (
     <>
       {/* Dynamic Screen Projections: Precision Hit Numbers & Status Badges */}
@@ -314,9 +421,14 @@ export const CombatHud: React.FC<CombatHudProps> = ({
           </div>
         ))}
 
-        {/* Core Impact Red Vignette Flash */}
+        {/* Core Impact Searing Red/Crimson Vignette Flash & Critical Hit Alert */}
         {coreImpactFlash && (
-          <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] pointer-events-none transition-opacity duration-300" />
+          <div className="absolute inset-0 bg-red-600/30 shadow-[inset_0_0_140px_rgba(239,68,68,0.8)] border-[6px] border-red-500/80 backdrop-blur-[1px] pointer-events-none transition-all duration-300 flex items-center justify-center">
+            <div className="bg-[#101516]/95 border-2 border-red-500 rounded-xl px-4 py-2 shadow-2xl flex items-center gap-2.5 text-red-400 font-mono text-xs sm:text-sm font-bold tracking-wider uppercase animate-pulse">
+              <Skull className="w-5 h-5 text-red-500 animate-spin-slow shrink-0" />
+              <span>CORE REACTOR STRUCK! CRITICAL ENERGY DRAIN</span>
+            </div>
+          </div>
         )}
 
         {/* 3D Core Lock-On Countdown Reticle over Targeting Hostile */}
@@ -377,21 +489,61 @@ export const CombatHud: React.FC<CombatHudProps> = ({
         </div>
       )}
 
-      {/* Top Center: Sector Battle Wave Progress & Win Tracker */}
+      {/* Top Center: Sector Battle Wave Progress, Mission Time, Pilot & Win Tracker */}
       {combatMode && (
-        <div className="pointer-events-auto fixed top-3 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center">
-          <div className="bg-[#101516]/95 backdrop-blur-md border border-[#283231] rounded-lg px-3.5 py-1.5 shadow-lg flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-[#98a5a2]">
+        <div className="pointer-events-auto fixed top-3 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5">
+          <div className="bg-[#101516]/95 backdrop-blur-md border border-[#283231] rounded-lg px-3.5 py-1.5 shadow-lg flex items-center gap-2.5 sm:gap-3 flex-wrap justify-center">
+            {/* Pilot Identity Badge */}
+            <div className="flex items-center gap-1 text-xs font-mono font-medium text-amber-300">
+              <User className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="font-bold tracking-wide">{combatStats.pilotName || 'Commander Sonu'}</span>
+              {onEditPilotName && (
+                <button
+                  onClick={onEditPilotName}
+                  className="p-0.5 hover:text-white transition-colors cursor-pointer text-amber-400/80"
+                  title="Customize Pilot / Commander Name"
+                >
+                  <Edit2 className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="w-px h-3 bg-[#283231] hidden sm:block" />
+
+            {/* Extended Mission Chronometer */}
+            <div className="flex items-center gap-1.5 text-xs font-mono">
+              <Clock
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  (combatStats.missionTimeRemaining ?? 120) < 30 ? 'text-red-400 animate-pulse' : 'text-[#d2f27c]'
+                }`}
+              />
+              <span
+                className={
+                  (combatStats.missionTimeRemaining ?? 120) < 30
+                    ? 'text-red-400 font-bold animate-pulse'
+                    : (combatStats.missionTimeRemaining ?? 120) < 60
+                    ? 'text-amber-300 font-semibold'
+                    : 'text-[#eef2ef] font-semibold'
+                }
+              >
+                TIME: {formatMissionTime(combatStats.missionTimeRemaining ?? 120)}
+              </span>
+            </div>
+
+            <div className="w-px h-3 bg-[#283231]" />
+
+            {/* Sector Number */}
+            <div className="flex items-center gap-1 text-xs font-mono font-medium text-[#98a5a2]">
               <Radio className="w-3.5 h-3.5 text-[#d2f27c]" />
               <span className="text-[#eef2ef] font-semibold">SECTOR {combatStats.wave || 1}</span>
             </div>
 
             <div className="w-px h-3 bg-[#283231]" />
 
-            {/* Wave Progress Bar */}
+            {/* Wave Target Kills Progress Bar */}
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-mono uppercase tracking-wider text-[#98a5a2]">TARGETS:</span>
-              <div className="w-24 sm:w-32 h-1.5 bg-[#151c1d] rounded-full overflow-hidden border border-[#283231] relative">
+              <div className="w-20 sm:w-28 h-1.5 bg-[#151c1d] rounded-full overflow-hidden border border-[#283231] relative">
                 <div
                   className="h-full bg-[#d2f27c] transition-all duration-300"
                   style={{
@@ -417,13 +569,188 @@ export const CombatHud: React.FC<CombatHudProps> = ({
                 </div>
               </>
             )}
+
+            <div className="w-px h-3 bg-[#283231]" />
+
+            {/* Brainwaves Toggle Option: Turn ON / OFF */}
+            <button
+              onClick={onToggleBrainwaves}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-mono tracking-wider transition-all cursor-pointer border ${
+                brainwavesEnabled !== false
+                  ? 'text-[#d2f27c] bg-[#151c1d] border-[#d2f27c]/40 hover:bg-[#1a2325]'
+                  : 'text-[#98a5a2] bg-[#101516] border-[#283231] hover:text-[#eef2ef]'
+              }`}
+              title="Toggle Brainwaves Neural Oscillations ON / OFF"
+              aria-label="Toggle Brainwaves"
+            >
+              <Activity className={`w-3 h-3 shrink-0 ${brainwavesEnabled !== false ? 'text-[#d2f27c] animate-pulse' : 'text-[#98a5a2]'}`} />
+              <span>BRAINWAVES: {brainwavesEnabled !== false ? 'ON' : 'OFF'}</span>
+            </button>
+
+            {/* Dynamic Enemy Attack AI Power Telemetry */}
+            {combatStats.enemyAggressionLevel && combatStats.enemyAggressionLevel !== 'NORMAL' && (
+              <>
+                <div className="w-px h-3 bg-[#283231]" />
+                <div
+                  className={`flex items-center gap-1 text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border select-none ${
+                    combatStats.enemyAggressionLevel === 'OVERCHARGED'
+                      ? 'text-red-400 border-red-500/50 bg-red-950/30 animate-pulse font-bold'
+                      : 'text-amber-400 border-amber-500/40 bg-amber-950/20'
+                  }`}
+                  title={
+                    combatStats.enemyAggressionLevel === 'OVERCHARGED'
+                      ? 'Enemy AI has overcharged due to rapid player combat! Faster attacks and higher damage!'
+                      : 'Enemy AI has elevated due to player combat pace! Enhanced aggression!'
+                  }
+                >
+                  <Flame className="w-3 h-3 shrink-0" />
+                  <span>AI: {combatStats.enemyAggressionLevel}</span>
+                </div>
+              </>
+            )}
           </div>
+
+          {/* Sector Escalating Difficulty Tier Badge */}
+          <div className="flex items-center gap-2 px-3 py-0.5 rounded-full bg-[#101516]/90 border border-[#283231] shadow-md text-[10px] font-mono">
+            <span className={`font-bold ${diffTier.color}`}>{diffTier.label}</span>
+            <span className="text-[#98a5a2]">•</span>
+            <span className="text-neutral-300">{diffTier.desc}</span>
+          </div>
+
+          {/* Cockpit Incendiary Fire Alert Banner */}
+          {combatStats.thermalBurnActive && (
+            <div className="flex items-center gap-2 px-3.5 py-1 rounded-xl bg-red-950/95 border-2 border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.7)] text-xs font-mono text-red-100 animate-pulse">
+              <Flame className="w-4 h-4 text-red-400 animate-bounce shrink-0" />
+              <span className="font-bold tracking-wider uppercase">
+                🔥 COCKPIT THERMAL FIRE DETECTED! HULL INTEGRITY BURNING ({Math.ceil(combatStats.thermalBurnRemaining || 0)}s)
+              </span>
+            </div>
+          )}
         </div>
       )}
 
       {/* Bottom Center Cockpit Console: Core Reactor + Shields + Overdrive + Balanced Torpedo Volley */}
       {combatMode && (
         <div className="pointer-events-auto fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 w-full max-w-lg px-3">
+          {/* Tactical Power Arsenal (Thermal Flame, Ion EMP, Plasma Reflector, Warp, Torpedo, Superlaser) */}
+          {!combatStats.isGameOver && (
+            <div className="w-full bg-[#101516]/95 backdrop-blur-md border border-[#283231] rounded-xl p-1.5 shadow-xl flex flex-col gap-1">
+              <div className="flex items-center justify-between px-1 text-[9px] font-mono uppercase tracking-wider text-[#98a5a2]">
+                <span className="flex items-center gap-1 text-amber-300">
+                  <Flame className="w-3 h-3 text-amber-400" />
+                  <span>TACTICAL POWER ARSENAL</span>
+                </span>
+                <span className="text-[8px] text-[#98a5a2]">
+                  ACTIVE: <strong className="text-[#d2f27c]">{combatStats.activePlayerPower?.toUpperCase() || 'FLAME'}</strong> • [1-6] KEYS
+                </span>
+              </div>
+              <div className="grid grid-cols-6 gap-1">
+                {POWER_DEFINITIONS.map((p) => {
+                  const isUnlocked = unlockedPowers.includes(p.id);
+                  const isEquipped = (combatStats.activePlayerPower || 'flame') === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        if (isUnlocked) {
+                          onSelectPower?.(p.id);
+                          onTriggerPower?.(p.id);
+                        }
+                      }}
+                      disabled={!isUnlocked}
+                      className={`py-1.5 px-0.5 rounded-lg border text-center flex flex-col items-center justify-center gap-0.5 transition-all transform active:scale-95 cursor-pointer ${
+                        !isUnlocked
+                          ? 'bg-[#121617]/50 border-neutral-800 text-neutral-600 opacity-50 cursor-not-allowed'
+                          : isEquipped
+                          ? 'bg-[#182022] border-amber-400/80 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
+                          : 'bg-[#151c1d] hover:bg-[#1a2325] border-[#283231] hover:border-neutral-500 text-neutral-300'
+                      }`}
+                      title={`${p.name}: ${p.desc} (Hotkey: [${p.hotkey}]) ${!isUnlocked ? `[Unlocks Sector ${p.unlockWave}]` : ''}`}
+                    >
+                      <span className="text-xs leading-none">{p.icon}</span>
+                      <span className="text-[9px] font-mono font-bold leading-tight truncate max-w-full">
+                        {p.short}
+                      </span>
+                      <span className="text-[7.5px] font-mono text-[#98a5a2] leading-none">
+                        [{p.hotkey}]
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Instance Fire Special Armament Quick Bar: Warp, Saber, Superlaser, Scatter */}
+          {!combatStats.isGameOver && (
+            <div className="w-full bg-[#101516]/95 backdrop-blur-md border border-[#283231] rounded-xl p-1.5 shadow-xl flex flex-col gap-1">
+              <div className="flex items-center justify-between px-1 text-[9px] font-mono uppercase tracking-wider text-[#98a5a2]">
+                <span className="flex items-center gap-1 text-[#d2f27c]">
+                  <Zap className="w-3 h-3 text-[#d2f27c]" />
+                  <span>INSTANCE FIRE SPECIAL ARMAMENTS</span>
+                </span>
+                <span className="text-[8px] text-[#98a5a2]">INSTANT ACTION HOTKEYS</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {/* 1. Warp */}
+                <button
+                  onClick={() => onInstantFire?.('warp')}
+                  className="py-1.5 px-1 rounded-lg bg-[#151c1d] hover:bg-[#1a2325] border border-[#283231] hover:border-sky-400/70 text-[#eef2ef] hover:text-sky-300 flex flex-col items-center justify-center gap-0.5 group transition-all transform active:scale-95 cursor-pointer"
+                  title="Instant Hyperspace Jump / Warp Surge (Hotkey: W)"
+                  aria-label="Instant Warp"
+                >
+                  <div className="flex items-center gap-1">
+                    <Rocket className="w-3.5 h-3.5 text-sky-400 group-hover:scale-110 transition-transform" />
+                    <span className="font-mono text-[10px] font-bold tracking-wider">WARP</span>
+                  </div>
+                  <span className="text-[8px] font-mono text-[#98a5a2]">[W] DASH</span>
+                </button>
+
+                {/* 2. Saber */}
+                <button
+                  onClick={() => onInstantFire?.('saber')}
+                  className="py-1.5 px-1 rounded-lg bg-[#151c1d] hover:bg-[#1a2325] border border-[#283231] hover:border-rose-400/70 text-[#eef2ef] hover:text-rose-300 flex flex-col items-center justify-center gap-0.5 group transition-all transform active:scale-95 cursor-pointer"
+                  title="Instant Lightsaber Clash & Deflection Blade (Hotkey: C / S)"
+                  aria-label="Instant Saber"
+                >
+                  <div className="flex items-center gap-1">
+                    <Swords className="w-3.5 h-3.5 text-rose-400 group-hover:scale-110 transition-transform" />
+                    <span className="font-mono text-[10px] font-bold tracking-wider">SABER</span>
+                  </div>
+                  <span className="text-[8px] font-mono text-[#98a5a2]">[C] CLASH</span>
+                </button>
+
+                {/* 3. Superlaser */}
+                <button
+                  onClick={() => onInstantFire?.('superlaser')}
+                  className="py-1.5 px-1 rounded-lg bg-[#151c1d] hover:bg-[#1a2325] border border-[#283231] hover:border-emerald-400/70 text-[#eef2ef] hover:text-emerald-300 flex flex-col items-center justify-center gap-0.5 group transition-all transform active:scale-95 cursor-pointer"
+                  title="Instant Death Star Superlaser Obliteration Beam (Hotkey: X / D)"
+                  aria-label="Instant Superlaser"
+                >
+                  <div className="flex items-center gap-1">
+                    <Flame className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span className="font-mono text-[10px] font-bold tracking-wider">SUPERLASER</span>
+                  </div>
+                  <span className="text-[8px] font-mono text-[#98a5a2]">[X] BEAM</span>
+                </button>
+
+                {/* 4. Scatter */}
+                <button
+                  onClick={() => onInstantFire?.('scatter')}
+                  className="py-1.5 px-1 rounded-lg bg-[#151c1d] hover:bg-[#1a2325] border border-[#283231] hover:border-cyan-400/70 text-[#eef2ef] hover:text-cyan-300 flex flex-col items-center justify-center gap-0.5 group transition-all transform active:scale-95 cursor-pointer"
+                  title="Instant Quantum Scatter & Reassembly Blast (Hotkey: R)"
+                  aria-label="Instant Scatter"
+                >
+                  <div className="flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                    <span className="font-mono text-[10px] font-bold tracking-wider">SCATTER</span>
+                  </div>
+                  <span className="text-[8px] font-mono text-[#98a5a2]">[R] BLAST</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Balanced Hyper Counter-Strike Torpedo Volley Trigger Controls */}
           {!combatStats.isGameOver && (
             <div className="w-full flex flex-col gap-1">

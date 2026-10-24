@@ -8,6 +8,7 @@ import {
   CombatStats,
   EnemyShipType,
   FloatingPointNotice,
+  PlayerPowerType,
   ShieldImpactNotice,
   SimulationConfig,
 } from './types';
@@ -15,6 +16,10 @@ import { MORPH_SHAPES_LIST } from './geometry/morphShapes';
 import { neuralAudio } from './audio/neuralAudio';
 
 export default function App() {
+  const defaultPilot = typeof window !== 'undefined'
+    ? localStorage.getItem('space_tour_pilot_name') || 'Commander Sonu'
+    : 'Commander Sonu';
+
   const [config, setConfig] = useState<SimulationConfig>({
     clickMode: 'shockwave',
     brainwave: 'alpha',
@@ -39,10 +44,13 @@ export default function App() {
     hyperspaceWarp: false,
     hologramProjector: true,
     starwarsTour: false,
+    pilotName: defaultPilot,
+    activePlayerPower: 'flame',
     sFoilsOpen: true,
     combatMode: true,           // Star Wars Dogfight Combat Active by default!
     enemySquadronSize: 4,
     autoAimBlaster: true,       // Auto-aim on click to easily destroy ships
+    brainwavesEnabled: true,    // Neural brainwave oscillations enabled by default
   });
 
   const [stats, setStats] = useState({
@@ -63,6 +71,14 @@ export default function App() {
     accuracy: 100,
     shotsFired: 0,
     shotsHit: 0,
+    pilotName: defaultPilot,
+    missionTimeRemaining: 120, // 120s extended mission chronometer
+    missionTotalTime: 120,
+    difficultyLevel: 1,
+    activePlayerPower: 'flame',
+    powersUnlocked: ['flame', 'warp', 'torpedo'],
+    thermalBurnActive: false,
+    thermalBurnRemaining: 0,
     playerShield: 100,
     blasterPower: 0,
     powerTier: 1,
@@ -93,6 +109,7 @@ export default function App() {
   const [shieldImpacts, setShieldImpacts] = useState<ShieldImpactNotice[]>([]);
   const [coreImpactFlash, setCoreImpactFlash] = useState<boolean>(false);
   const [lockedShipName, setLockedShipName] = useState<string | null>(null);
+  const [isPilotModalOpen, setIsPilotModalOpen] = useState<boolean>(false);
 
   const triggerActionRef = useRef<
     | ((
@@ -111,6 +128,11 @@ export default function App() {
           | 'restart_wave'
           | 'restart_mission'
           | 'breach_explosion'
+          | 'power_flame'
+          | 'power_emp'
+          | 'power_reflector'
+          | 'power_warp'
+          | 'power_torpedo'
       ) => void)
     | null
   >(null);
@@ -625,6 +647,124 @@ export default function App() {
     }
   }, []);
 
+  // Instant Fire Special Armaments Callback (Warp, Saber, Superlaser, Scatter)
+  const handleInstantFire = useCallback((type: 'warp' | 'saber' | 'superlaser' | 'scatter') => {
+    if (type === 'warp') {
+      triggerActionRef.current?.('hyperspace');
+      neuralAudio.playHyperspace();
+      const noticeId = Date.now() + Math.random();
+      setFloatingNotices((list) => [
+        ...list,
+        {
+          id: noticeId,
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.35,
+          text: 'HYPERSPACE WARP SURGE!',
+          comboText: 'WARP DASH 🚀',
+          subText: 'LIGHTSPEED SHOCKWAVE DISCHARGED',
+          color: '#38bdf8',
+          createdAt: Date.now(),
+        },
+      ]);
+      setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== noticeId)), 1200);
+    } else if (type === 'saber') {
+      triggerActionRef.current?.('saberclash');
+      neuralAudio.playSaberClash();
+      // Saber deflection restores +6% shield and +3% core
+      setCombatStats((prev) => ({
+        ...prev,
+        playerShield: Math.min(100, (prev.playerShield ?? 100) + 6),
+        coreEnergy: Math.min(100, (prev.coreEnergy ?? 100) + 3),
+        deflections: prev.deflections + 1,
+      }));
+      const noticeId = Date.now() + Math.random();
+      setFloatingNotices((list) => [
+        ...list,
+        {
+          id: noticeId,
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.35,
+          text: 'LIGHTSABER CLASH DEFLECTION!',
+          comboText: 'DEFLECTION BLADE ⚔️',
+          subText: '+6% SHIELD RECHARGE // SHOCK DEFLECT',
+          color: '#f43f5e',
+          createdAt: Date.now(),
+        },
+      ]);
+      setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== noticeId)), 1200);
+    } else if (type === 'superlaser') {
+      triggerActionRef.current?.('superlaser');
+      neuralAudio.playSuperlaser();
+      const noticeId = Date.now() + Math.random();
+      setFloatingNotices((list) => [
+        ...list,
+        {
+          id: noticeId,
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.35,
+          text: 'SUPERLASER MEGA BEAM FIRED!',
+          comboText: 'DEATH STAR EMERALD BLAST 🟢',
+          subText: 'CONVERGING AXIAL OBLITERATION',
+          color: '#10b981',
+          createdAt: Date.now(),
+        },
+      ]);
+      setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== noticeId)), 1400);
+    } else if (type === 'scatter') {
+      triggerActionRef.current?.('scatter');
+      const noticeId = Date.now() + Math.random();
+      setFloatingNotices((list) => [
+        ...list,
+        {
+          id: noticeId,
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.35,
+          text: 'QUANTUM SCATTER SHOCKWAVE!',
+          comboText: 'RADIAL KINETIC DISPLACEMENT 💥',
+          subText: 'INSTANT REASSEMBLY CHARGED',
+          color: '#c084fc',
+          createdAt: Date.now(),
+        },
+      ]);
+      setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== noticeId)), 1200);
+    }
+  }, []);
+
+  // Brainwaves Dynamic Neural Frequency Toggle
+  const handleToggleBrainwaves = useCallback(() => {
+    setConfig((prev) => {
+      const nextVal = !prev.brainwavesEnabled;
+      const noticeId = Date.now() + Math.random();
+      setFloatingNotices((list) => [
+        ...list,
+        {
+          id: noticeId,
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.28,
+          text: nextVal ? 'BRAINWAVES: ON' : 'BRAINWAVES: OFF',
+          subText: nextVal
+            ? 'NEURAL RESONANCE & ALPHA/BETA/GAMMA PULSES ACTIVE'
+            : 'NEURAL OSCILLATIONS PAUSED / STABILIZED',
+          color: nextVal ? '#d2f27c' : '#98a5a2',
+          createdAt: Date.now(),
+        },
+      ]);
+      setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== noticeId)), 1400);
+      return { ...prev, brainwavesEnabled: nextVal };
+    });
+  }, []);
+
+  // Dynamic Enemy AI Aggression Level change handler
+  const handleAggressionChange = useCallback((level: 'NORMAL' | 'ELEVATED' | 'OVERCHARGED') => {
+    setCombatStats((prev) => {
+      if (prev.enemyAggressionLevel === level) return prev;
+      return {
+        ...prev,
+        enemyAggressionLevel: level,
+      };
+    });
+  }, []);
+
   // Cooldown countdown timer for Proton Torpedo reload
   useEffect(() => {
     const timer = setInterval(() => {
@@ -641,26 +781,185 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Advance to Next Sector Wave
-  const handleNextWave = useCallback(() => {
-    triggerActionRef.current?.('hyperspace');
+  // Extended Mission Chronometer & Thermal Burn Countdown Timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCombatStats((prev) => {
+        if (!config.combatMode || prev.isGameOver || prev.isVictorious) return prev;
+
+        // Decrement mission chronometer
+        const nextTime = Math.max(0, (prev.missionTimeRemaining ?? 120) - 1);
+        if (nextTime === 0 && (prev.missionTimeRemaining ?? 120) > 0) {
+          neuralAudio.playAlarmWarning();
+        }
+
+        // Decrement cockpit thermal burn
+        let burnActive = prev.thermalBurnActive ?? false;
+        let burnRemaining = prev.thermalBurnRemaining ?? 0;
+        if (burnActive) {
+          burnRemaining = Math.max(0, burnRemaining - 1);
+          if (burnRemaining <= 0) {
+            burnActive = false;
+          }
+        }
+
+        return {
+          ...prev,
+          missionTimeRemaining: nextTime,
+          thermalBurnActive: burnActive,
+          thermalBurnRemaining: burnRemaining,
+        };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [config.combatMode]);
+
+  // Tactical Power Activation Handlers
+  const handleTriggerPower = useCallback(
+    (power: PlayerPowerType) => {
+      if (power === 'flame') {
+        triggerActionRef.current?.('power_flame' as any);
+        const noticeId = Date.now() + Math.random();
+        setFloatingNotices((list) => [
+          ...list,
+          {
+            id: noticeId,
+            x: window.innerWidth / 2,
+            y: window.innerHeight * 0.36,
+            text: 'THERMAL FLAME CANNONS! 🔥',
+            comboText: 'INCENDIARY INFERNO BARRAGE',
+            subText: 'QUAD BLAZING PLASMA STREAMS',
+            color: '#ff6d00',
+            createdAt: Date.now(),
+          },
+        ]);
+        setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== noticeId)), 1400);
+      } else if (power === 'emp') {
+        triggerActionRef.current?.('power_emp' as any);
+        const noticeId = Date.now() + Math.random();
+        setFloatingNotices((list) => [
+          ...list,
+          {
+            id: noticeId,
+            x: window.innerWidth / 2,
+            y: window.innerHeight * 0.36,
+            text: 'ION EMP PULSE DETONATED! ⚡',
+            comboText: 'ENEMY WEAPONS FROZEN (4.0s)',
+            subText: 'ALL HOSTILE FIRE SUPPRESSED',
+            color: '#00f0ff',
+            createdAt: Date.now(),
+          },
+        ]);
+        setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== noticeId)), 1500);
+      } else if (power === 'reflector') {
+        triggerActionRef.current?.('power_reflector' as any);
+        const noticeId = Date.now() + Math.random();
+        setFloatingNotices((list) => [
+          ...list,
+          {
+            id: noticeId,
+            x: window.innerWidth / 2,
+            y: window.innerHeight * 0.36,
+            text: 'PLASMA MIRROR DEFLECTOR! 🛡️',
+            comboText: 'REFLECTING ENEMY BOLTS (3.5s)',
+            subText: 'ENEMY FIRE WILL BOUNCE BACK',
+            color: '#38bdf8',
+            createdAt: Date.now(),
+          },
+        ]);
+        setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== noticeId)), 1500);
+      } else if (power === 'warp') {
+        handleInstantFire('warp');
+      } else if (power === 'torpedo') {
+        handleUnleashHyperStrike();
+      } else if (power === 'superlaser') {
+        handleInstantFire('superlaser');
+      }
+    },
+    [handleInstantFire, handleUnleashHyperStrike]
+  );
+
+  const handleSelectPower = useCallback((power: PlayerPowerType) => {
+    setCombatStats((prev) => ({ ...prev, activePlayerPower: power }));
+    setConfig((prev) => ({ ...prev, activePlayerPower: power }));
+  }, []);
+
+  const handleThermalBurnTriggered = useCallback((duration: number) => {
     setCombatStats((prev) => ({
       ...prev,
-      wave: prev.wave + 1,
-      waveTarget: prev.waveTarget + 4,
-      waveKills: 0,
-      isVictorious: false,
-      totalWins: (prev.totalWins || 0) + 1,
-      playerShield: 100,
-      coreEnergy: Math.min(100, (prev.coreEnergy || 100) + 25), // Wave clear reward
-      blasterPower: 25,
-      powerTier: 1,
-      torpedoAmmo: prev.maxTorpedoAmmo || 2, // Full torpedo ammo replenish
-      torpedoCooldown: 0,
-      deathStarCharge: Math.min(100, (prev.deathStarCharge || 0) + 25), // Wave clear superweapon reward
-      activeLockOn: null,
-      incomingThreatWarning: false,
+      thermalBurnActive: true,
+      thermalBurnRemaining: duration,
     }));
+  }, []);
+
+  const handleEditPilotName = useCallback(() => {
+    setIsPilotModalOpen(true);
+  }, []);
+
+  // Advance to Next Sector Wave with Escalating Difficulty & New Powers
+  const handleNextWave = useCallback(() => {
+    triggerActionRef.current?.('hyperspace');
+    setCombatStats((prev) => {
+      const nextWave = prev.wave + 1;
+      const nextPowers = [...(prev.powersUnlocked || ['flame', 'warp', 'torpedo'])];
+      let newPowerUnlockedTitle: string | null = null;
+
+      if (nextWave >= 2 && !nextPowers.includes('emp')) {
+        nextPowers.push('emp');
+        newPowerUnlockedTitle = 'ION EMP PULSE UNLOCKED! ⚡';
+      }
+      if (nextWave >= 3 && !nextPowers.includes('reflector')) {
+        nextPowers.push('reflector');
+        newPowerUnlockedTitle = 'PLASMA MIRROR DEFLECTOR UNLOCKED! 🛡️';
+      }
+      if (nextWave >= 4 && !nextPowers.includes('superlaser')) {
+        nextPowers.push('superlaser');
+        newPowerUnlockedTitle = 'DEATH STAR SUPERLASER UNLOCKED! 🟢';
+      }
+
+      if (newPowerUnlockedTitle) {
+        neuralAudio.playPowerUnlocked();
+        const pNoticeId = Date.now() + Math.random();
+        setFloatingNotices((list) => [
+          ...list,
+          {
+            id: pNoticeId,
+            x: window.innerWidth / 2,
+            y: window.innerHeight * 0.38,
+            text: newPowerUnlockedTitle,
+            comboText: 'TACTICAL POWER ARSENAL EXPANDED',
+            subText: 'USE HOTKEYS [1-6] OR POWER DOCK',
+            color: '#d2f27c',
+            createdAt: Date.now(),
+          },
+        ]);
+        setTimeout(() => setFloatingNotices((list) => list.filter((n) => n.id !== pNoticeId)), 2500);
+      }
+
+      return {
+        ...prev,
+        wave: nextWave,
+        waveTarget: prev.waveTarget + 4,
+        waveKills: 0,
+        isVictorious: false,
+        totalWins: (prev.totalWins || 0) + 1,
+        missionTimeRemaining: 120, // Reset extended mission timer for each sector
+        missionTotalTime: 120,
+        difficultyLevel: (prev.difficultyLevel || 1) + 1,
+        powersUnlocked: nextPowers,
+        thermalBurnActive: false,
+        thermalBurnRemaining: 0,
+        playerShield: 100,
+        coreEnergy: Math.min(100, (prev.coreEnergy || 100) + 25), // Wave clear reward
+        blasterPower: 25,
+        powerTier: 1,
+        torpedoAmmo: prev.maxTorpedoAmmo || 2, // Full torpedo ammo replenish
+        torpedoCooldown: 0,
+        deathStarCharge: Math.min(100, (prev.deathStarCharge || 0) + 25), // Wave clear superweapon reward
+        activeLockOn: null,
+        incomingThreatWarning: false,
+      };
+    });
   }, []);
 
   // Restart Wave (Reset current wave after game over)
@@ -670,6 +969,9 @@ export default function App() {
       ...prev,
       coreEnergy: 100,
       playerShield: 100,
+      missionTimeRemaining: 120,
+      thermalBurnActive: false,
+      thermalBurnRemaining: 0,
       isGameOver: false,
       waveKills: 0,
       isVictorious: false,
@@ -696,6 +998,14 @@ export default function App() {
       accuracy: 100,
       shotsFired: 0,
       shotsHit: 0,
+      pilotName: defaultPilot,
+      missionTimeRemaining: 120,
+      missionTotalTime: 120,
+      difficultyLevel: 1,
+      activePlayerPower: 'flame',
+      powersUnlocked: ['flame', 'warp', 'torpedo'],
+      thermalBurnActive: false,
+      thermalBurnRemaining: 0,
       playerShield: 100,
       blasterPower: 0,
       powerTier: 1,
@@ -718,13 +1028,21 @@ export default function App() {
       deathStarStrikesUsed: 0,
       activeLockOn: null,
     });
-  }, []);
+  }, [defaultPilot]);
 
   // Keyboard shortcut listener:
+  // [Digit1-6]: Select & Trigger Tactical Powers (Flame, EMP, Reflector, Warp, Torpedo, Superlaser)
   // [Space]: Fire Proton Torpedo Volley when Overdrive & Ammo are ready
-  // [KeyD]: Fire Death Star Superweapon when Orbital Capacitor is 100%
+  // [KeyD]: Fire Death Star Superweapon (or Instant Superlaser)
+  // [KeyW]: Instant Hyperspace Warp
+  // [KeyC]: Instant Lightsaber Clash Deflection
+  // [KeyX]: Instant Superlaser
+  // [KeyR]: Instant Quantum Scatter
+  // [KeyB]: Toggle Brainwaves ON / OFF
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (!config.combatMode || combatStats.isGameOver) return;
 
       // Spacebar for Proton Torpedo Volley
@@ -733,12 +1051,76 @@ export default function App() {
         handleUnleashHyperStrike();
       }
 
+      // [1-6] Tactical Powers
+      if (e.code === 'Digit1') {
+        e.preventDefault();
+        handleTriggerPower('flame');
+      }
+      if (e.code === 'Digit2') {
+        e.preventDefault();
+        if (combatStats.powersUnlocked?.includes('emp')) {
+          handleTriggerPower('emp');
+        }
+      }
+      if (e.code === 'Digit3') {
+        e.preventDefault();
+        if (combatStats.powersUnlocked?.includes('reflector')) {
+          handleTriggerPower('reflector');
+        }
+      }
+      if (e.code === 'Digit4') {
+        e.preventDefault();
+        handleTriggerPower('warp');
+      }
+      if (e.code === 'Digit5') {
+        e.preventDefault();
+        handleTriggerPower('torpedo');
+      }
+      if (e.code === 'Digit6') {
+        e.preventDefault();
+        if (combatStats.powersUnlocked?.includes('superlaser')) {
+          handleTriggerPower('superlaser');
+        }
+      }
+
       // KeyD for Death Star Superlaser
       if (e.code === 'KeyD') {
+        e.preventDefault();
         if ((combatStats.deathStarCharge ?? 0) >= 100) {
-          e.preventDefault();
           handleFireDeathStarSuperweapon();
+        } else {
+          handleInstantFire('superlaser');
         }
+      }
+
+      // KeyW for Instant Warp Dash
+      if (e.code === 'KeyW') {
+        e.preventDefault();
+        handleInstantFire('warp');
+      }
+
+      // KeyC for Instant Lightsaber Clash Deflection
+      if (e.code === 'KeyC') {
+        e.preventDefault();
+        handleInstantFire('saber');
+      }
+
+      // KeyX for Instant Superlaser
+      if (e.code === 'KeyX') {
+        e.preventDefault();
+        handleInstantFire('superlaser');
+      }
+
+      // KeyR for Instant Scatter
+      if (e.code === 'KeyR') {
+        e.preventDefault();
+        handleInstantFire('scatter');
+      }
+
+      // KeyB for Toggle Brainwaves
+      if (e.code === 'KeyB') {
+        e.preventDefault();
+        handleToggleBrainwaves();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -746,9 +1128,13 @@ export default function App() {
   }, [
     combatStats.deathStarCharge,
     combatStats.isGameOver,
+    combatStats.powersUnlocked,
     config.combatMode,
     handleUnleashHyperStrike,
     handleFireDeathStarSuperweapon,
+    handleInstantFire,
+    handleTriggerPower,
+    handleToggleBrainwaves,
   ]);
 
   const handleUpdateConfig = (updates: Partial<SimulationConfig>) => {
@@ -820,6 +1206,9 @@ export default function App() {
         config={config}
         powerTier={combatStats.powerTier}
         wave={combatStats.wave}
+        combo={combatStats.combo}
+        destroyedCount={combatStats.destroyedCount}
+        playerShield={combatStats.playerShield}
         isGameOver={combatStats.isGameOver}
         onStatsUpdate={setStats}
         onBrainClickTriggered={setLastTriggeredMode}
@@ -830,6 +1219,8 @@ export default function App() {
         onCoreLockOnUpdate={handleCoreLockOnUpdate}
         onDeflectionSuccess={handleDeflectionSuccess}
         onPickupCollected={handlePickupCollected}
+        onAggressionChange={handleAggressionChange}
+        onThermalBurnTriggered={handleThermalBurnTriggered}
         triggerActionRef={triggerActionRef}
       />
 
@@ -842,6 +1233,12 @@ export default function App() {
         lockedShipName={lockedShipName}
         combatMode={config.combatMode}
         autoAimBlaster={config.autoAimBlaster}
+        brainwavesEnabled={config.brainwavesEnabled}
+        onToggleBrainwaves={handleToggleBrainwaves}
+        onInstantFire={handleInstantFire}
+        onTriggerPower={handleTriggerPower}
+        onSelectPower={handleSelectPower}
+        onEditPilotName={handleEditPilotName}
         onToggleCombatMode={() => handleUpdateConfig({ combatMode: !config.combatMode })}
         onToggleAutoAim={() => handleUpdateConfig({ autoAimBlaster: !config.autoAimBlaster })}
         onUnleashHyperStrike={handleUnleashHyperStrike}
@@ -891,6 +1288,8 @@ export default function App() {
         onTriggerAction={handleTriggerAction}
         onNextShape={handleNextShape}
         lastTriggeredMode={lastTriggeredMode}
+        isPilotModalOpen={isPilotModalOpen}
+        onTogglePilotModal={setIsPilotModalOpen}
       />
     </main>
   );
